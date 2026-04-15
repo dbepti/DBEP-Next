@@ -1,16 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL}/api/:path*`,
-      },
-    ];
-  },
   images: {
-    domains: ["*.supabase.co"],
+    domains: ["thyvrndtfgqbqopyhezd.supabase.co"],
   },
 };
-
 module.exports = nextConfig;
