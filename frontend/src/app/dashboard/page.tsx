@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { wkApi, dokumenApi } from "@/lib/api";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const QUICK = [
   { label: "WP&B Eksplorasi", href: "/dokumen/wpb-eksplorasi", desc: "Rencana Kerja & Anggaran", color: "#1565c0" },
@@ -12,54 +17,82 @@ const QUICK = [
 ];
 
 export default function DashboardPage() {
-  const [wkStats, setWkStats] = useState<any>(null);
-  const [docStats, setDocStats] = useState<any>(null);
+  const [stats, setStats] = useState({ aktif: 0, terminasi: 0, totalWk: 0 });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    wkApi.stats().then(setWkStats).catch(console.error);
-    dokumenApi.stats().then(setDocStats).catch(console.error);
+    async function load() {
+      try {
+        const [total, aktif, terminasi] = await Promise.all([
+          supabase.from("land_right").select("*", { count: "exact", head: true }),
+          supabase.from("land_right").select("*", { count: "exact", head: true }).eq("land_right_category", "WK_ACTIVE"),
+          supabase.from("land_right").select("*", { count: "exact", head: true }).eq("land_right_category", "WK_TERMINATED"),
+        ]);
+        setStats({ totalWk: total.count ?? 0, aktif: aktif.count ?? 0, terminasi: terminasi.count ?? 0 });
+      } finally { setLoading(false); }
+    }
+    load();
   }, []);
 
-  const stats = [
-    { label: "Total Dokumen", value: docStats?.total ?? "—", color: "#e0e0e0" },
-    { label: "WK Aktif", value: wkStats?.wk_aktif ?? "—", color: "#81c784" },
-    { label: "WK Terminasi", value: wkStats?.wk_terminasi ?? "—", color: "#757575" },
-    { label: "Total WK", value: wkStats?.total_wk ?? "—", color: "#64b5f6" },
+  const cards = [
+    { label: "Total WK", value: stats.totalWk, color: "#e0e0e0", sub: "Seluruh Wilayah Kerja" },
+    { label: "WK Aktif", value: stats.aktif, color: "#66bb6a", sub: "Sedang berproduksi" },
+    { label: "WK Terminasi", value: stats.terminasi, color: "#9e9e9e", sub: "Kontrak berakhir" },
+    { label: "Total Dokumen", value: 0, color: "#42a5f5", sub: "Sprint 3 — segera" },
   ];
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#212121", overflowY:"auto" }}>
-      <div style={{ background:"#212121", borderBottom:"1px solid #333", padding:"10px 18px", display:"flex", alignItems:"center" }}>
-        <div style={{ fontSize:18, fontWeight:400, color:"#e0e0e0", flex:1 }}>Dashboard</div>
-        <div style={{ fontSize:10, color:"#555" }}>DBEP-Next · SKK Migas · Spektrum IOG 4.0</div>
+      {/* Topbar */}
+      <div style={{ background:"#212121", borderBottom:"1px solid #383838", padding:"12px 20px", display:"flex", alignItems:"center" }}>
+        <div style={{ fontSize:20, fontWeight:500, color:"#f0f0f0", flex:1 }}>Dashboard</div>
+        <div style={{ fontSize:11, color:"#666" }}>DBEP-Next · SKK Migas · Spektrum IOG 4.0</div>
       </div>
-      <div style={{ padding:16, display:"flex", flexDirection:"column", gap:14 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
-          {stats.map(s => (
-            <div key={s.label} style={{ background:"#2a2a2a", border:"1px solid #333", borderRadius:5, padding:"12px 14px", textAlign:"center" }}>
-              <div style={{ fontSize:22, fontWeight:400, color:s.color }}>{typeof s.value==="number" ? s.value.toLocaleString("id-ID") : s.value}</div>
-              <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{s.label}</div>
+
+      <div style={{ padding:20, display:"flex", flexDirection:"column", gap:16 }}>
+
+        {/* Stat Cards */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
+          {cards.map(s => (
+            <div key={s.label} style={{ background:"#2c2c2c", border:"1px solid #3a3a3a", borderRadius:8, padding:"16px 18px", textAlign:"center" }}>
+              <div style={{ fontSize:32, fontWeight:500, color:s.color, letterSpacing:-1 }}>
+                {loading ? "..." : s.value.toLocaleString("id-ID")}
+              </div>
+              <div style={{ fontSize:13, fontWeight:500, color:"#bdbdbd", marginTop:4 }}>{s.label}</div>
+              <div style={{ fontSize:11, color:"#666", marginTop:2 }}>{s.sub}</div>
             </div>
           ))}
         </div>
+
+        {/* Quick Access */}
         <div>
-          <div style={{ fontSize:10, color:"#555", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.08em" }}>Akses Cepat</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+          <div style={{ fontSize:11, fontWeight:600, color:"#757575", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.1em" }}>
+            Akses Cepat
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
             {QUICK.map(q => (
-              <a key={q.href} href={q.href} style={{ background:"#2a2a2a", border:"1px solid #333", borderLeft:`3px solid ${q.color}`, borderRadius:5, padding:"10px 12px", textDecoration:"none", display:"block" }}>
-                <div style={{ fontSize:12, fontWeight:500, color:"#e0e0e0" }}>{q.label}</div>
-                <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{q.desc}</div>
+              <a key={q.href} href={q.href} style={{ background:"#2c2c2c", border:"1px solid #3a3a3a", borderLeft:`3px solid ${q.color}`, borderRadius:6, padding:"12px 14px", textDecoration:"none", display:"block", transition:"border-color .15s" }}>
+                <div style={{ fontSize:13, fontWeight:500, color:"#e0e0e0" }}>{q.label}</div>
+                <div style={{ fontSize:11, color:"#757575", marginTop:3 }}>{q.desc}</div>
               </a>
             ))}
           </div>
         </div>
+
+        {/* Upload */}
         <div>
-          <div style={{ fontSize:10, color:"#555", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.08em" }}>Unggah Dokumen</div>
-          <div style={{ background:"#2a2a2a", border:"2px dashed #333", borderRadius:5, padding:32, textAlign:"center", cursor:"pointer" }}>
-            <div style={{ fontSize:12, color:"#555" }}>Seret &amp; lepas file PDF di sini, atau <span style={{ color:"#81c784" }}>pilih file</span></div>
-            <div style={{ fontSize:10, color:"#3a3a3a", marginTop:4 }}>PDF, TIFF, JPG — maks 50 MB</div>
+          <div style={{ fontSize:11, fontWeight:600, color:"#757575", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.1em" }}>
+            Unggah Dokumen
+          </div>
+          <div style={{ background:"#2c2c2c", border:"2px dashed #3a3a3a", borderRadius:6, padding:36, textAlign:"center", cursor:"pointer" }}>
+            <div style={{ fontSize:13, color:"#757575" }}>
+              Seret &amp; lepas file PDF di sini, atau{" "}
+              <span style={{ color:"#66bb6a", fontWeight:500 }}>pilih file</span>
+            </div>
+            <div style={{ fontSize:11, color:"#4a4a4a", marginTop:5 }}>PDF, TIFF, JPG — maks 50 MB per file</div>
           </div>
         </div>
+
       </div>
     </div>
   );
