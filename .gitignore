@@ -33,3 +33,4 @@ Thumbs.db
 # Database
 *.sql.bak
 dump.sql
+database/*.csv
