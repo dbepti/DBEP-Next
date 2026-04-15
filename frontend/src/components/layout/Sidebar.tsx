@@ -1,105 +1,65 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { clsx } from "clsx";
 
 const NAV = [
-  {
-    section: "Semua Dokumen",
-    items: [
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Unggah Dokumen", href: "/upload" },
-    ],
-  },
-  {
-    section: "Eksplorasi",
-    items: [
-      { label: "Komitmen WP&B", href: "/dokumen/wpb", count: null },
-      { label: "WP&B Eksplorasi", href: "/dokumen/wpb-eksplorasi", sub: true },
-      { label: "AFE", href: "/dokumen/afe", sub: true },
-      { label: "Resources (P/L)", href: "/dokumen/resources", sub: true },
-    ],
-  },
-  {
-    section: "Development",
-    items: [
-      { label: "POD / POP", href: "/dokumen/pod", sub: true },
-      { label: "PMF / EOR", href: "/dokumen/pmf", sub: true },
-    ],
-  },
-  {
-    section: "Eksploitasi",
-    items: [
-      { label: "WP&B Eksploitasi", href: "/dokumen/wpb-eksploitasi", sub: true },
-      { label: "AFE", href: "/dokumen/afe-eksploitasi", sub: true },
-      { label: "Cadangan Migas", href: "/dokumen/cadangan", sub: true },
-    ],
-  },
-  {
-    section: "Kelola",
-    items: [
-      { label: "Wilayah Kerja", href: "/wk" },
-      { label: "KKKS", href: "/kkks" },
-      { label: "Pencarian AI", href: "/search" },
-    ],
-  },
+  { label: "Dashboard", href: "/dashboard", icon: "⊞" },
+  { label: "Dokumen", href: "/dokumen", icon: "📄", count: 2867 },
+  { section: "Saved Views" },
+  { label: "Baru Ditambah", href: "/dokumen?sort=created", icon: "🕐", sub: true },
+  { label: "Inbox", href: "/dokumen?status=inbox", icon: "📥", sub: true },
+  { section: "Eksplorasi" },
+  { label: "WP&B Eksplorasi", href: "/dokumen/wpb-eksplorasi", icon: "·", sub: true, count: 1204 },
+  { label: "AFE", href: "/dokumen/afe", icon: "·", sub: true, count: 892 },
+  { label: "Resources (P/L)", href: "/dokumen/resources", icon: "·", sub: true },
+  { section: "Development" },
+  { label: "POD / POP", href: "/dokumen/pod", icon: "·", sub: true },
+  { label: "PMF / EOR", href: "/dokumen/pmf", icon: "·", sub: true },
+  { section: "Eksploitasi" },
+  { label: "WP&B Eksploitasi", href: "/dokumen/wpb-eksploitasi", icon: "·", sub: true },
+  { label: "AFE", href: "/dokumen/afe-eksploitasi", icon: "·", sub: true },
+  { label: "Cadangan Migas", href: "/dokumen/cadangan", icon: "·", sub: true },
+  { section: "Kelola" },
+  { label: "KKKS", href: "/kkks", icon: "🏢" },
+  { label: "Wilayah Kerja", href: "/wk", icon: "🗺" },
+  { label: "Pencarian AI", href: "/search", icon: "🔍" },
+  { label: "Pengaturan", href: "/settings", icon: "⚙" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-
   return (
-    <aside className="w-56 flex flex-col flex-shrink-0 bg-[#0f2744] text-white">
-      {/* Logo */}
-      <div className="px-4 py-4 border-b border-white/10">
-        <div className="text-[13px] font-medium leading-tight">DBEP-Next</div>
-        <div className="text-[10px] text-white/40 mt-0.5">SKK Migas · Spektrum IOG 4.0</div>
-      </div>
-
-      {/* User */}
-      <div className="px-3 py-2.5 border-b border-white/10 flex items-center gap-2">
-        <div className="w-7 h-7 rounded-full bg-[#185fa5] flex items-center justify-center text-[11px] font-semibold flex-shrink-0">
-          HM
-        </div>
+    <aside style={{ width:190, background:"#212121", borderRight:"1px solid #333", display:"flex", flexDirection:"column", flexShrink:0, overflowY:"auto" }}>
+      <div style={{ padding:"12px 14px", display:"flex", alignItems:"center", gap:8 }}>
+        <div style={{ width:24, height:24, background:"#388e3c", borderRadius:4, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#e8f5e9", flexShrink:0 }}>D</div>
         <div>
-          <div className="text-[12px] text-white/85 truncate">Heru Murdha...</div>
-          <div className="text-[10px] text-white/40">Analis Data WK</div>
+          <div style={{ fontSize:13, fontWeight:500, color:"#e0e0e0" }}>DBEP-Next</div>
+          <div style={{ fontSize:9, color:"#555", marginTop:1 }}>SKK Migas · IOG 4.0</div>
         </div>
       </div>
-
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-1">
-        {NAV.map((group) => (
-          <div key={group.section}>
-            <div className="px-3.5 pt-3 pb-1 text-[9px] font-semibold text-white/30 uppercase tracking-widest">
-              {group.section}
-            </div>
-            {group.items.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={clsx(
-                  "flex items-center gap-2 text-[11px] transition-colors",
-                  item.sub ? "pl-7 pr-3 py-1.5" : "px-3.5 py-1.5",
-                  pathname === item.href
-                    ? item.sub
-                      ? "bg-[#185fa5]/50 text-[#9fe1cb]"
-                      : "bg-[#185fa5] text-white"
-                    : "text-white/60 hover:bg-white/8 hover:text-white/90"
-                )}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 flex-shrink-0" />
-                <span className="flex-1">{item.label}</span>
-              </Link>
-            ))}
-          </div>
-        ))}
+      <nav style={{ flex:1 }}>
+        {NAV.map((item, i) => {
+          if ("section" in item) return (
+            <div key={i} style={{ padding:"10px 14px 3px", fontSize:9, fontWeight:600, color:"#555", textTransform:"uppercase", letterSpacing:"0.09em" }}>{item.section}</div>
+          );
+          const active = pathname === item.href || pathname.startsWith(item.href + "?");
+          return (
+            <Link key={item.href} href={item.href} style={{ padding: item.sub ? "6px 14px 6px 24px" : "7px 14px", fontSize:12, color: active ? "#81c784" : "#9e9e9e", background: active ? "#2a2a2a" : "transparent", display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
+              <span style={{ fontSize: item.icon === "·" ? 16 : 12, opacity:0.6, flexShrink:0, lineHeight:1 }}>{item.icon}</span>
+              <span style={{ flex:1 }}>{item.label}</span>
+              {"count" in item && item.count && (
+                <span style={{ background:"#2a2a2a", color:"#555", fontSize:9, padding:"1px 5px", borderRadius:8, border:"1px solid #333" }}>{(item.count as number).toLocaleString("id-ID")}</span>
+              )}
+            </Link>
+          );
+        })}
       </nav>
-
-      {/* Bottom */}
-      <div className="px-3.5 py-2.5 border-t border-white/10 flex gap-4 text-[11px] text-white/40">
-        <Link href="/settings" className="hover:text-white/70">Pengaturan</Link>
-        <button className="hover:text-white/70">Keluar</button>
+      <div style={{ padding:"8px 14px", borderTop:"1px solid #333", display:"flex", alignItems:"center", gap:7 }}>
+        <div style={{ width:22, height:22, borderRadius:"50%", background:"#1b5e20", display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:600, color:"#a5d6a7", flexShrink:0 }}>HM</div>
+        <div>
+          <div style={{ fontSize:11, color:"#9e9e9e" }}>Heru Murdha...</div>
+          <div style={{ fontSize:9, color:"#555" }}>Analis Data WK</div>
+        </div>
       </div>
     </aside>
   );

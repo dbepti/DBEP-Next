@@ -1,88 +1,63 @@
 "use client";
 import { useEffect, useState } from "react";
 import { wkApi, dokumenApi } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
 
-interface Stats {
-  total_wk: number;
-  wk_aktif: number;
-  wk_terminasi: number;
-}
+const QUICK = [
+  { label: "WP&B Eksplorasi", href: "/dokumen/wpb-eksplorasi", desc: "Rencana Kerja & Anggaran", color: "#1565c0" },
+  { label: "AFE", href: "/dokumen/afe", desc: "Authorization For Expenditure", color: "#6a1b9a" },
+  { label: "POD / POP", href: "/dokumen/pod", desc: "Plan of Development", color: "#bf360c" },
+  { label: "Cadangan Migas", href: "/dokumen/cadangan", desc: "Laporan Cadangan Tahunan", color: "#1a237e" },
+  { label: "Prospect & Leads", href: "/dokumen/prospect-leads", desc: "Laporan Prospek Tahunan", color: "#004d40" },
+  { label: "Pencarian AI", href: "/search", desc: "Cari dengan bahasa natural", color: "#388e3c" },
+];
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [wkStats, setWkStats] = useState<any>(null);
   const [docStats, setDocStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([wkApi.stats(), dokumenApi.stats()])
-      .then(([wkData, docData]) => {
-        setStats(wkData);
-        setDocStats(docData);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    wkApi.stats().then(setWkStats).catch(console.error);
+    dokumenApi.stats().then(setDocStats).catch(console.error);
   }, []);
 
-  return (
-    <div className="flex flex-col h-full overflow-auto">
-      {/* Topbar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
-        <h1 className="text-[15px] font-medium text-gray-900 flex-1">Dashboard</h1>
-        <span className="text-[11px] text-gray-400">DBEP-Next · SKK Migas · Spektrum IOG 4.0</span>
-      </div>
+  const stats = [
+    { label: "Total Dokumen", value: docStats?.total ?? "—", color: "#e0e0e0" },
+    { label: "WK Aktif", value: wkStats?.wk_aktif ?? "—", color: "#81c784" },
+    { label: "WK Terminasi", value: wkStats?.wk_terminasi ?? "—", color: "#757575" },
+    { label: "Total WK", value: wkStats?.total_wk ?? "—", color: "#64b5f6" },
+  ];
 
-      <div className="p-6 flex flex-col gap-6">
-        {/* Stats cards */}
-        <div className="grid grid-cols-4 gap-4">
-          {[
-            { label: "Total Dokumen", value: docStats?.total ?? "—", color: "text-gray-900" },
-            { label: "WK Aktif", value: stats?.wk_aktif ?? "—", color: "text-green-700" },
-            { label: "WK Terminasi", value: stats?.wk_terminasi ?? "—", color: "text-gray-500" },
-            { label: "Total WK", value: stats?.total_wk ?? "—", color: "text-blue-700" },
-          ].map((s) => (
-            <div key={s.label} className="bg-gray-50 rounded-lg p-4 text-center">
-              <div className={`text-2xl font-medium ${s.color}`}>
-                {loading ? "..." : s.value.toLocaleString("id-ID")}
-              </div>
-              <div className="text-[11px] text-gray-400 mt-1">{s.label}</div>
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#212121", overflowY:"auto" }}>
+      <div style={{ background:"#212121", borderBottom:"1px solid #333", padding:"10px 18px", display:"flex", alignItems:"center" }}>
+        <div style={{ fontSize:18, fontWeight:400, color:"#e0e0e0", flex:1 }}>Dashboard</div>
+        <div style={{ fontSize:10, color:"#555" }}>DBEP-Next · SKK Migas · Spektrum IOG 4.0</div>
+      </div>
+      <div style={{ padding:16, display:"flex", flexDirection:"column", gap:14 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
+          {stats.map(s => (
+            <div key={s.label} style={{ background:"#2a2a2a", border:"1px solid #333", borderRadius:5, padding:"12px 14px", textAlign:"center" }}>
+              <div style={{ fontSize:22, fontWeight:400, color:s.color }}>{typeof s.value==="number" ? s.value.toLocaleString("id-ID") : s.value}</div>
+              <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{s.label}</div>
             </div>
           ))}
         </div>
-
-        {/* Quick access grid */}
         <div>
-          <h2 className="text-[13px] font-medium text-gray-700 mb-3">Akses Cepat</h2>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "WP&B Eksplorasi", href: "/dokumen/wpb-eksplorasi", desc: "Rencana Kerja & Anggaran", color: "border-blue-200 hover:border-blue-400" },
-              { label: "AFE", href: "/dokumen/afe", desc: "Authorization For Expenditure", color: "border-amber-200 hover:border-amber-400" },
-              { label: "POD / POP", href: "/dokumen/pod", desc: "Plan of Development", color: "border-green-200 hover:border-green-400" },
-              { label: "Cadangan Migas", href: "/dokumen/cadangan", desc: "Laporan Cadangan Tahunan", color: "border-purple-200 hover:border-purple-400" },
-              { label: "Prospect & Leads", href: "/dokumen/prospect-leads", desc: "Laporan Prospek Tahunan", color: "border-teal-200 hover:border-teal-400" },
-              { label: "Pencarian AI", href: "/search", desc: "Cari dengan bahasa natural", color: "border-pink-200 hover:border-pink-400" },
-            ].map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className={`bg-white border rounded-lg p-4 transition-colors ${item.color}`}
-              >
-                <div className="text-[13px] font-medium text-gray-900">{item.label}</div>
-                <div className="text-[11px] text-gray-400 mt-1">{item.desc}</div>
+          <div style={{ fontSize:10, color:"#555", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.08em" }}>Akses Cepat</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+            {QUICK.map(q => (
+              <a key={q.href} href={q.href} style={{ background:"#2a2a2a", border:"1px solid #333", borderLeft:`3px solid ${q.color}`, borderRadius:5, padding:"10px 12px", textDecoration:"none", display:"block" }}>
+                <div style={{ fontSize:12, fontWeight:500, color:"#e0e0e0" }}>{q.label}</div>
+                <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{q.desc}</div>
               </a>
             ))}
           </div>
         </div>
-
-        {/* Upload zone */}
         <div>
-          <h2 className="text-[13px] font-medium text-gray-700 mb-3">Unggah Dokumen Baru</h2>
-          <div className="bg-white border-2 border-dashed border-gray-200 rounded-lg p-8 text-center hover:border-blue-300 transition-colors cursor-pointer">
-            <div className="text-[13px] text-gray-500">
-              Seret & lepas file PDF di sini, atau{" "}
-              <span className="text-blue-600 font-medium">pilih file</span>
-            </div>
-            <div className="text-[11px] text-gray-400 mt-2">PDF, TIFF, JPG — maks 50 MB per file</div>
+          <div style={{ fontSize:10, color:"#555", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.08em" }}>Unggah Dokumen</div>
+          <div style={{ background:"#2a2a2a", border:"2px dashed #333", borderRadius:5, padding:32, textAlign:"center", cursor:"pointer" }}>
+            <div style={{ fontSize:12, color:"#555" }}>Seret &amp; lepas file PDF di sini, atau <span style={{ color:"#81c784" }}>pilih file</span></div>
+            <div style={{ fontSize:10, color:"#3a3a3a", marginTop:4 }}>PDF, TIFF, JPG — maks 50 MB</div>
           </div>
         </div>
       </div>
