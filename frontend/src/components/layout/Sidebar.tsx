@@ -22,6 +22,7 @@ const NAV = [
   { section: "Kelola" },
   { label: "KKKS", href: "/kkks", icon: "🏢" },
   { label: "Wilayah Kerja", href: "/wk", icon: "🗺" },
+  { label: "Tambah WK Baru", href: "/wk/baru", icon: "·", sub: true },
   { label: "Pencarian AI", href: "/search", icon: "🔍" },
   { label: "Pengaturan", href: "/settings", icon: "⚙" },
 ];
