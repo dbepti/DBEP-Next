@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 const sb  = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = "/api/proxy";  // Next.js proxy → FastAPI localhost:8000
 
 const TIPE_LIST   = ["PSC","PSC-EXT","PTM","PTM-1","PTM-2","PTM-3","JOB","JOA","COW","KONTRAK JASA"];
 const LOKASI_LIST = ["ONSHORE","OFFSHORE","ONSHORE/OFFSHORE"];
@@ -89,40 +89,66 @@ export default function WKEditPage() {
   async function saveInfo() {
     setSaving(true); setMsg("");
     try {
-      const res = await fetch(`${API}/api/wk/${id}`, {
-        method:"PATCH", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          nama_wk: namaWk, tipe_kontrak: tipeKontrak,
-          lokasi, fase,
-          tgl_efektif: tglEfektif || null,
-          tgl_berakhir: tglBerakhir || null,
-          luas_km2_ori: luasKm2 ? parseFloat(luasKm2) : null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail);
-      setMsg("✅ " + data.message);
+      const remark = `WK:${namaWk}|LOC:${lokasi}|STAGE:${fase}|STATUS:ACTIVE|CLASS:CURRENT`;
+      const { error: e1 } = await sb.from("LAND_RIGHT").update({
+        GRANTED_RIGHT_TYPE : tipeKontrak,
+        EFFECTIVE_DATE     : tglEfektif || null,
+        EXPIRY_DATE        : tglBerakhir || null,
+        GROSS_SIZE         : luasKm2 ? parseFloat(luasKm2) : null,
+        REMARK             : remark,
+        ROW_CHANGED_BY     : "DBEP-NEXT",
+      }).eq("LAND_RIGHT_ID", id).eq("LAND_RIGHT_SUBTYPE","LAND_AGREEMENT");
+      if (e1) throw new Error(e1.message);
+
+      const { error: e2 } = await sb.from("LAND_ALIAS").update({
+        ALIAS_LONG_NAME  : namaWk,
+        ALIAS_SHORT_NAME : namaWk.slice(0,30),
+      }).eq("LAND_RIGHT_ID", id).eq("LR_ALIAS_ID","WK_NAME");
+      if (e2) throw new Error(e2.message);
+
+      setMsg("✅ Data WK berhasil diupdate");
       setTimeout(() => router.push(`/wk/${id}`), 1200);
     } catch(e:any) { setMsg("❌ " + e.message); }
     finally { setSaving(false); }
   }
 
   async function gantiOperator() {
-    if (!kkksSelected) { setMsg("Pilih KKKS operator baru"); return; }
-    if (!tglMulai)     { setMsg("Tanggal mulai wajib diisi"); return; }
+    if (!kkksSelected) { setMsg("❌ Pilih KKKS operator baru dari daftar"); return; }
+    if (!tglMulai)     { setMsg("❌ Tanggal mulai wajib diisi"); return; }
     setSaving(true); setMsg("");
     try {
-      const res = await fetch(`${API}/api/wk/${id}/ganti-operator`, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          ksid_operator_baru: kkksSelected.id,
-          tgl_mulai: tglMulai,
-          alasan,
-        }),
+      // Nonaktifkan operator lama
+      const { error: e1 } = await sb.from("INT_SET_PARTNER").update({
+        ACTIVE_IND       : "N",
+        EXPIRY_DATE      : tglMulai,
+        REMARK           : alasan || "Pergantian operator",
+        ROW_CHANGED_BY   : "DBEP-NEXT",
+      }).eq("INTEREST_SET_ID", id).eq("INTEREST_SET_ROLE","OPERATOR").eq("ACTIVE_IND","Y");
+      if (e1) throw new Error(e1.message);
+
+      // Cari obs_no tertinggi
+      const { data: existing } = await sb.from("INT_SET_PARTNER")
+        .select("PARTNER_OBS_NO").eq("INTEREST_SET_ID", id)
+        .order("PARTNER_OBS_NO", { ascending:false }).limit(1);
+      const nextObs = existing?.[0] ? existing[0].PARTNER_OBS_NO + 1 : 1;
+
+      // Insert operator baru
+      const { error: e2 } = await sb.from("INT_SET_PARTNER").insert({
+        INTEREST_SET_ID     : id,
+        INTEREST_SET_SEQ_NO : 1,
+        PARTNER_BA_ID       : kkksSelected.id,
+        PARTNER_OBS_NO      : nextObs,
+        ACTIVE_IND          : "Y",
+        INTEREST_SET_ROLE   : "OPERATOR",
+        EFFECTIVE_DATE      : tglMulai,
+        BREACH_IND          : "N",
+        PENALTY_IND         : "N",
+        REMARK              : alasan || null,
+        SOURCE              : "DBEP",
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail);
-      setMsg("✅ " + data.message);
+      if (e2) throw new Error(e2.message);
+
+      setMsg("✅ Operator berhasil diganti");
       setTimeout(() => router.push(`/wk/${id}`), 1200);
     } catch(e:any) { setMsg("❌ " + e.message); }
     finally { setSaving(false); }

@@ -28,7 +28,6 @@ interface WK {
 // ── Konstanta ────────────────────────────────────────────
 const TIPE_LIST   = ["PSC", "PTM", "PSC-EXT", "JOB", "JOA", "COW", "KONTRAK JASA"];
 const LOKASI_LIST = ["ONSHORE", "OFFSHORE", "ONSHORE/OFFSHORE"];
-const PAGE_SIZE   = 50;
 
 // ── Sub-komponen ─────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -78,7 +77,8 @@ export default function WKPage() {
   const [rows, setRows]     = useState<WK[]>([]);
   const [total, setTotal]   = useState(0);
   const [loading, setLoading] = useState(true);
-  const [page, setPage]     = useState(0);
+  const [sortBy, setSortBy]   = useState<string>("wkid");
+  const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [search, setSearch] = useState("");
   const [filterAktif, setFilterAktif]   = useState<"" | "Y" | "N">("");
   const [filterTipe, setFilterTipe]     = useState("");
@@ -89,7 +89,7 @@ export default function WKPage() {
     let q = sb
       .from("v_wk_lengkap")
       .select("*", { count: "exact" })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      .order("wkid", { ascending: true });
 
     if (filterAktif)  q = q.eq("aktif", filterAktif);
     if (filterTipe)   q = q.eq("tipe_kontrak", filterTipe);
@@ -102,17 +102,27 @@ export default function WKPage() {
       setTotal(count ?? 0);
     }
     setLoading(false);
-  }, [page, filterAktif, filterTipe, filterLokasi, search]);
+  }, [filterAktif, filterTipe, filterLokasi, search]);
 
   useEffect(() => { load(); }, [load]);
 
-  const resetPage = () => setPage(0);
 
   const fmtDate = (s: string | null) => s ? s.slice(0, 7) : "—"; // YYYY-MM
   const fmtSize = (n: number | null) =>
     n ? n.toLocaleString("id-ID") + " km²" : "—";
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  function handleSort(col: string) {
+    if (sortBy === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(col); setSortDir("asc"); }
+  }
+
+  const sortedRows = [...rows].sort((a, b) => {
+    const va = (a as any)[sortBy] ?? "";
+    const vb = (b as any)[sortBy] ?? "";
+    const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#212121", overflow: "hidden" }}>
@@ -127,7 +137,7 @@ export default function WKPage() {
         </div>
         <input
           value={search}
-          onChange={e => { setSearch(e.target.value); resetPage(); }}
+          onChange={e => setSearch(e.target.value)}
           placeholder="Cari WKID, nama WK, KKKS..."
           style={{
             width: 240, background: "#2a2a2a", border: "1px solid #383838",
@@ -135,6 +145,11 @@ export default function WKPage() {
             color: "#e0e0e0", outline: "none",
           }}
         />
+        <Link href="/wk/baru" style={{
+          padding: "5px 14px", borderRadius: 4, fontSize: 12,
+          background: "#1b5e20", border: "1px solid #2e7d32",
+          color: "#a5d6a7", textDecoration: "none", whiteSpace: "nowrap",
+        }}>+ WK Baru</Link>
       </div>
 
       {/* ── Filter chips ── */}
@@ -143,22 +158,17 @@ export default function WKPage() {
         padding: "7px 20px", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center",
       }}>
         <span style={{ fontSize: 10, color: "#555", marginRight: 2 }}>Status:</span>
-        <Chip label="Semua"    active={filterAktif === ""}  onClick={() => { setFilterAktif(""); resetPage(); }} />
-        <Chip label="Aktif"    active={filterAktif === "Y"} onClick={() => { setFilterAktif(filterAktif === "Y" ? "" : "Y"); resetPage(); }} />
-        <Chip label="Terminasi" active={filterAktif === "N"} onClick={() => { setFilterAktif(filterAktif === "N" ? "" : "N"); resetPage(); }} />
 
         <span style={{ color: "#2a2a2a", margin: "0 6px" }}>|</span>
         <span style={{ fontSize: 10, color: "#555", marginRight: 2 }}>Tipe:</span>
         {TIPE_LIST.map(t => (
-          <Chip key={t} label={t} active={filterTipe === t}
-            onClick={() => { setFilterTipe(filterTipe === t ? "" : t); resetPage(); }} />
+          <Chip key={t} label={t} active={filterTipe === t} onClick={() => { setFilterTipe(filterTipe === t ? "" : t); }} />
         ))}
 
         <span style={{ color: "#2a2a2a", margin: "0 6px" }}>|</span>
         <span style={{ fontSize: 10, color: "#555", marginRight: 2 }}>Lokasi:</span>
         {LOKASI_LIST.map(l => (
-          <Chip key={l} label={l} active={filterLokasi === l}
-            onClick={() => { setFilterLokasi(filterLokasi === l ? "" : l); resetPage(); }} />
+          <Chip key={l} label={l} active={filterLokasi === l} onClick={() => { setFilterLokasi(filterLokasi === l ? "" : l); }} />
         ))}
 
         <span style={{ marginLeft: "auto", fontSize: 11, color: "#555" }}>
@@ -171,24 +181,26 @@ export default function WKPage() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
             <tr style={{ background: "#1a1a1a", borderBottom: "1px solid #333" }}>
-              {[
-                ["WKID",          "90px"],
-                ["Nama Wilayah Kerja", "auto"],
-                ["Tipe",          "80px"],
-                ["Status",        "90px"],
-                ["Lokasi",        "120px"],
-                ["Fase",          "130px"],
-                ["KKKS Operator Aktif", "220px"],
-                ["Efektif",       "80px"],
-                ["Berakhir",      "80px"],
-                ["Luas",          "90px"],
-              ].map(([h, w]) => (
-                <th key={h as string} style={{
+              {([
+                ["WKID",               "90px",  "wkid"],
+                ["Nama Wilayah Kerja", "auto",  "nama_wk"],
+                ["Tipe",               "80px",  "tipe_kontrak"],
+                ["Status",             "90px",  "status_wk"],
+                ["Lokasi",             "120px", "lokasi"],
+                ["Fase",               "130px", "fase"],
+                ["KKKS Operator Aktif","220px", "operator_utama"],
+                ["Efektif",            "80px",  "tgl_efektif"],
+                ["Berakhir",           "80px",  "tgl_berakhir"],
+                ["Luas",               "90px",  "luas_km2"],
+              ] as [string,string,string][]).map(([h, w, col]) => (
+                <th key={h} onClick={() => handleSort(col)} style={{
                   padding: "8px 10px", textAlign: "left", fontWeight: 600,
-                  fontSize: 10, color: "#666", textTransform: "uppercase",
-                  letterSpacing: "0.07em", width: w as string,
-                  whiteSpace: "nowrap",
-                }}>{h}</th>
+                  fontSize: 10, color: sortBy === col ? "#66bb6a" : "#666",
+                  textTransform: "uppercase", letterSpacing: "0.07em",
+                  width: w, whiteSpace: "nowrap", cursor: "pointer", userSelect: "none",
+                }}>
+                  {h}{sortBy === col ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕"}
+                </th>
               ))}
             </tr>
           </thead>
@@ -197,7 +209,7 @@ export default function WKPage() {
               <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "#555" }}>Memuat data...</td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "#555" }}>Tidak ada data</td></tr>
-            ) : rows.map((wk, i) => (
+            ) : sortedRows.map((wk, i) => (
               <tr key={wk.wkid} style={{
                 background: i % 2 === 0 ? "#222" : "#212121",
                 borderBottom: "1px solid #2a2a2a",
@@ -259,22 +271,6 @@ export default function WKPage() {
           </tbody>
         </table>
 
-        {/* ── Pagination ── */}
-        {!loading && totalPages > 1 && (
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, padding: "14px 0", borderTop: "1px solid #2a2a2a" }}>
-            <button disabled={page === 0} onClick={() => setPage(0)}
-              style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #383838", background: "#2a2a2a", color: page === 0 ? "#444" : "#9e9e9e", cursor: page === 0 ? "default" : "pointer", fontSize: 11 }}>«</button>
-            <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
-              style={{ padding: "4px 12px", borderRadius: 4, border: "1px solid #383838", background: "#2a2a2a", color: page === 0 ? "#444" : "#9e9e9e", cursor: page === 0 ? "default" : "pointer", fontSize: 12 }}>← Prev</button>
-            <span style={{ padding: "4px 12px", fontSize: 12, color: "#555" }}>
-              Hal {page + 1} / {totalPages}
-            </span>
-            <button disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}
-              style={{ padding: "4px 12px", borderRadius: 4, border: "1px solid #383838", background: "#2a2a2a", color: (page + 1) * PAGE_SIZE >= total ? "#444" : "#9e9e9e", cursor: (page + 1) * PAGE_SIZE >= total ? "default" : "pointer", fontSize: 12 }}>Next →</button>
-            <button disabled={page === totalPages - 1} onClick={() => setPage(totalPages - 1)}
-              style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #383838", background: "#2a2a2a", color: page === totalPages - 1 ? "#444" : "#9e9e9e", cursor: page === totalPages - 1 ? "default" : "pointer", fontSize: 11 }}>»</button>
-          </div>
-        )}
       </div>
     </div>
   );

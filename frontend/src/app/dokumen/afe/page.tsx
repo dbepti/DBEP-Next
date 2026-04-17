@@ -1,185 +1,190 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-const AFE_TYPE_COLOR: Record<string, string> = {
-  AFE: "#6a1b9a",
-};
-
-function Badge({ label, color }: { label: string; color: string }) {
-  return (
-    <span style={{ fontSize:8, fontWeight:700, padding:"1px 5px", borderRadius:2,
-      background: color + "33", color, border:`1px solid ${color}66` }}>
-      {label}
-    </span>
-  );
-}
-
 const STATUS_COLOR: Record<string, string> = {
-  ORIGINAL:"#1565c0", REVISI:"#e65100", VALID:"#1b5e20",
+  ORIGINAL: "#66bb6a", REVISI: "#ffa726", REVISI2: "#ef5350",
+  DRAFT: "#78909c", FINAL: "#42a5f5",
 };
+const TYPE_LABEL: Record<string, string> = {
+  POD:"POD", POP:"POP", POFD:"POFD", PMF:"PMF", EOR:"EOR",
+  WPB_EKSPLORASI:"WP&B Eksplorasi", WPB_EKSPLOITASI:"WP&B Eksploitasi",
+  AFE_PEMBORAN_EPT:"Pemboran Eksploitasi", AFE_PEMBORAN_EKS:"Pemboran Eksplorasi",
+  AFE_FASPROD:"Fasilitas Produksi", AFE_WORKOVER:"Workover",
+  AFE_STUDI:"Studi", AFE_SURVAI:"Survai Seismik",
+  AFE_NON_EPT:"Non Eksploitasi", CADANGAN:"Cadangan",
+};
+const COL = "70px 160px 1fr 180px 50px 80px";
 
-export default function AfePage() {
+export default function Page() {
+  const searchParams = useSearchParams();
   const [docs, setDocs] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<any>(null);
-  const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterTahun, setFilterTahun] = useState("");
   const [page, setPage] = useState(0);
+  const [filterWK, setFilterWK] = useState(() => searchParams?.get("wkid") ?? "");
+  const [filterTahun, setFilterTahun] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterType, setFilterType] = useState(() => searchParams?.get("type") ?? "");
+  const [search, setSearch] = useState("");
+  const [wkList, setWkList] = useState<any[]>([]);
   const PAGE = 50;
+
+  useEffect(() => {
+    sb.from("v_dokumen").select("wkid,nama_wk").in("item_type",["AFE_PEMBORAN_EKS","AFE_STUDI","AFE_SURVAI"]).not("wkid","is",null)
+      .then(({ data }) => {
+        if (!data) return;
+        const u = Array.from(new Map(data.map((d:any)=>[d.wkid,d])).values())
+          .sort((a:any,b:any)=>(a.nama_wk||"").localeCompare(b.nama_wk||""));
+        setWkList(u as any[]);
+      });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    let q = sb.from("rm_information_item")
-      .select("*", { count:"exact" })
-      .eq("item_type", "AFE")
-      .order("effective_date", { ascending: false })
-      .range(page * PAGE, (page + 1) * PAGE - 1);
-
-    if (filterStatus) q = q.eq("active_ind", filterStatus);
-    if (filterTahun)  q = q.gte("effective_date", `${filterTahun}-01-01`)
-                           .lte("effective_date", `${filterTahun}-12-31`);
-    if (search)       q = q.ilike("item_name", `%${search}%`);
-
+    let q = sb.from("v_dokumen").select("*",{count:"exact"}).in("item_type",["AFE_PEMBORAN_EKS","AFE_STUDI","AFE_SURVAI"])
+      .order("effective_date",{ascending:false})
+      .range(page*PAGE,(page+1)*PAGE-1);
+    if (filterWK) q = q.eq("wkid",filterWK);
+    if (filterTahun) q = q.gte("effective_date",filterTahun+"-01-01").lte("effective_date",filterTahun+"-12-31");
+    if (filterStatus) q = q.eq("doc_status",filterStatus);
+    if (filterType) q = q.eq("item_type",filterType);
+    if (search) q = q.ilike("item_name","%"+search+"%");
     const { data, count } = await q;
-    setDocs(data ?? []);
-    setTotal(count ?? 0);
+    setDocs(data??[]);
+    setTotal(count??0);
     setLoading(false);
-  }, [page, filterStatus, filterTahun, search]);
+  }, [page,filterWK,filterTahun,filterStatus,filterType,search]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(()=>{load();},[load]);
+  useEffect(()=>{setPage(0);setSelected(null);},[ filterWK,filterTahun,filterStatus,filterType,search]);
 
-  const years = Array.from({ length: 12 }, (_, i) => String(new Date().getFullYear() - i));
-
-  const chip = (label: string, val: string, cur: string, set: (v: string) => void) => (
-    <span key={label} onClick={() => { set(cur === val ? "" : val); setPage(0); }}
-      style={{ background: cur===val ? "#1b5e20" : "#2a2a2a",
-        border:`1px solid ${cur===val ? "#2e7d32" : "#383838"}`,
-        color: cur===val ? "#a5d6a7" : "#9e9e9e",
-        borderRadius:4, padding:"3px 8px", fontSize:11, cursor:"pointer" }}>
-      {label}
-    </span>
-  );
+  const years = Array.from({length:20},(_,i)=>String(new Date().getFullYear()-i));
+  const totalPages = Math.ceil(total/PAGE);
+  const ss = (a:boolean)=>({
+    background:"#2a2a2a" as const, border:"1px solid "+(a?"#4caf50":"#383838"),
+    borderRadius:5, padding:"5px 8px", color:a?"#a5d6a7":"#555",
+    fontSize:11, outline:"none" as const, cursor:"pointer" as const,
+  });
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#212121", overflow:"hidden" }}>
-      {/* Topbar */}
-      <div style={{ background:"#212121", borderBottom:"1px solid #333", padding:"10px 16px",
-        display:"flex", alignItems:"center", gap:8 }}>
-        <div style={{ fontSize:18, fontWeight:400, color:"#e0e0e0", flex:1 }}>
-          AFE
-          <span style={{ fontSize:11, color:"#555", marginLeft:8 }}>{total.toLocaleString("id-ID")} dokumen</span>
-        </div>
-        <input value={search} onChange={e => { setSearch(e.target.value); setPage(0); }}
-          placeholder="Cari WK, perihal..."
-          style={{ width:200, background:"#2a2a2a", border:"1px solid #383838",
-            borderRadius:4, padding:"5px 10px", fontSize:12, color:"#e0e0e0", outline:"none" }} />
-        <button style={{ padding:"5px 12px", borderRadius:4, fontSize:12,
-          background:"#1b5e20", border:"1px solid #2e7d32", color:"#a5d6a7", cursor:"pointer" }}>
-          + Tambah
-        </button>
+    <div style={{display:"flex",flexDirection:"column",height:"100%",background:"#1a1a1a",overflow:"hidden"}}>
+      <div style={{padding:"8px 16px",borderBottom:"1px solid #2a2a2a",background:"#212121",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
+        <span style={{fontSize:13,color:"#e0e0e0",fontWeight:500}}>AFE Eksplorasi</span>
+        <span style={{fontSize:11,color:"#444"}}>{loading ? "..." : total+" dokumen"}</span>
+        <div style={{width:1,height:16,background:"#333",margin:"0 4px"}}/>
+        <select value={filterWK} onChange={e=>setFilterWK(e.target.value)} style={ss(!!filterWK)}>
+          <option value="">Semua WK</option>
+          {wkList.map((w:any)=><option key={w.wkid} value={w.wkid}>{w.nama_wk} ({w.wkid})</option>)}
+        </select>
+        <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={ss(!!filterType)}>
+          <option value="">Semua Tipe</option>
+          <option value="AFE_PEMBORAN_EKS">Pemboran Eksplorasi</option>
+          <option value="AFE_STUDI">Studi</option>
+          <option value="AFE_SURVAI">Survai Seismik</option>
+        </select>
+        <select value={filterTahun} onChange={e=>setFilterTahun(e.target.value)} style={ss(!!filterTahun)}>
+          <option value="">Semua Tahun</option>
+          {years.map(y=><option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={ss(!!filterStatus)}>
+          <option value="">Semua Status</option>
+          {["ORIGINAL","REVISI","REVISI2","DRAFT","FINAL"].map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari judul..."
+          style={{background:"#2a2a2a",border:"1px solid #383838",borderRadius:5,padding:"5px 10px",color:"#e0e0e0",fontSize:11,width:150,outline:"none"}}/>
+        {(filterWK||filterTahun||filterStatus||filterType||search)&&
+          <button onClick={()=>{setFilterWK("");setFilterTahun("");setFilterStatus("");setFilterType("");setSearch("");}}
+              style={{background:"none",border:"1px solid #383838",borderRadius:4,padding:"4px 8px",color:"#666",fontSize:10,cursor:"pointer"}}>x Reset</button>}
       </div>
-
-      {/* Filters */}
-      <div style={{ background:"#212121", borderBottom:"1px solid #333",
-        padding:"6px 16px", display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-        <span style={{ fontSize:11, color:"#555" }}>Status:</span>
-        {chip("Semua","",filterStatus,setFilterStatus)}
-        {["ORIGINAL","REVISI","VALID"].map(s => chip(s,s,filterStatus,setFilterStatus))}
-        <span style={{ color:"#333", margin:"0 4px" }}>|</span>
-        <span style={{ fontSize:11, color:"#555" }}>Tahun:</span>
-        {chip("Semua","",filterTahun,setFilterTahun)}
-        {years.map(y => chip(y,y,filterTahun,setFilterTahun))}
-        <span style={{ marginLeft:"auto", fontSize:11, color:"#555" }}>
-          {loading ? "Memuat..." : `${docs.length} dari ${total.toLocaleString("id-ID")}`}
-        </span>
-      </div>
-
-      {/* Grid */}
-      <div style={{ flex:1, overflowY:"auto", padding:"12px 16px" }}>
-        {loading ? (
-          <div style={{ display:"flex", justifyContent:"center", alignItems:"center",
-            height:200, color:"#555" }}>Memuat...</div>
-        ) : (
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(5,minmax(0,1fr))", gap:10 }}>
-            {docs.map(d => {
-              const yr = d.effective_date?.slice(0,4) ?? "—";
-              const isSel = selected?.information_item_id === d.information_item_id;
-              return (
-                <div key={d.information_item_id} onClick={() => setSelected(d)}
-                  style={{ background: isSel ? "#2e2e2e" : "#2a2a2a",
-                    border: isSel ? "2px solid #388e3c" : "1px solid #383838",
-                    borderRadius:6, overflow:"hidden", cursor:"pointer" }}>
-                  <div style={{ height:110, background:"#1e1a2a", position:"relative",
-                    display:"flex", alignItems:"center", justifyContent:"center" }}>
-                    <div style={{ width:"68%", height:"85%", background:"#fff", borderRadius:2,
-                      padding:5, display:"flex", flexDirection:"column", gap:2, overflow:"hidden" }}>
-                      {[100,75,55,100,70,40,100].map((w,i) => (
-                        <div key={i} style={{ height:2, width:`${w}%`,
-                          background: i%2===0 ? "#e0e0e0" : "#bdbdbd", borderRadius:1 }} />
-                      ))}
-                    </div>
-                    <div style={{ position:"absolute", top:5, left:5, display:"flex", gap:2 }}>
-                      <Badge label="AFE" color="#6a1b9a" />
-                      <Badge label={d.active_ind ?? "ORIGINAL"} color={STATUS_COLOR[d.active_ind] ?? "#555"} />
-                    </div>
-                    <div style={{ position:"absolute", bottom:4, right:5, fontSize:8,
-                      color:"#fff", background:"rgba(0,0,0,.5)", padding:"1px 4px", borderRadius:2 }}>
-                      {yr}
-                    </div>
-                  </div>
-                  <div style={{ padding:"7px 8px" }}>
-                    <div style={{ fontSize:10, color:"#66bb6a", fontWeight:500, marginBottom:1 }}>
-                      {d.land_right_id ?? "—"}
-                    </div>
-                    <div style={{ fontSize:10, color:"#bdbdbd", lineHeight:1.4, marginBottom:3,
-                      display:"-webkit-box", WebkitLineClamp:2,
-                      WebkitBoxOrient:"vertical", overflow:"hidden" }}>
-                      {d.item_name}
-                    </div>
-                    <div style={{ fontSize:9, color:"#555" }}>
-                      {d.doc_number ?? yr}
-                    </div>
-                  </div>
-                  <div style={{ display:"flex", borderTop:"1px solid #333" }}>
-                    {["✏ Edit","👁 Lihat","⬇ Unduh"].map(a => (
-                      <button key={a} onClick={e => e.stopPropagation()}
-                        style={{ flex:1, padding:"4px 2px", background:"transparent",
-                          border:"none", cursor:"pointer", color:"#555", fontSize:9, textAlign:"center" }}>
-                        {a}
-                      </button>
-                    ))}
-                  </div>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{flex:"0 0 55%",display:"flex",flexDirection:"column",overflow:"hidden",borderBottom:"1px solid #2a2a2a"}}>
+          <div style={{display:"grid",gridTemplateColumns:COL,gap:8,padding:"5px 16px",background:"#1e1e1e",borderBottom:"1px solid #252525",fontSize:10,color:"#444",textTransform:"uppercase",letterSpacing:"0.5px",flexShrink:0}}>
+            <span>WKID</span><span>Wilayah Kerja</span><span>Judul Dokumen</span><span>KKKS</span><span>Tahun</span><span>Status</span>
+          </div>
+          <div style={{flex:1,overflowY:"auto"}}>
+            {loading?<div style={{padding:32,textAlign:"center",color:"#333",fontSize:12}}>Memuat...</div>
+            :docs.length===0?<div style={{padding:32,textAlign:"center",color:"#333",fontSize:12}}>Tidak ada dokumen</div>
+            :docs.map(doc=>{
+              const isSel=selected?.information_item_id===doc.information_item_id;
+              const yr=doc.effective_date?.slice(0,4)||"-";
+              return(
+                <div key={doc.information_item_id} onClick={()=>setSelected(isSel?null:doc)}
+                  style={{display:"grid",gridTemplateColumns:COL,gap:8,padding:"5px 16px",borderBottom:"1px solid #1e1e1e",cursor:"pointer",background:isSel?"#1a2d1a":"transparent",borderLeft:"2px solid "+(isSel?"#4caf50":"transparent")}}
+                  onMouseEnter={e=>{if(!isSel)(e.currentTarget as HTMLElement).style.background="#222";}}
+                  onMouseLeave={e=>{if(!isSel)(e.currentTarget as HTMLElement).style.background="transparent";}}>
+                  <span style={{fontSize:11,color:"#4a6fa5",fontFamily:"monospace",whiteSpace:"nowrap"}}>{doc.wkid??"—"}</span>
+                  <span style={{fontSize:11,color:"#66bb6a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{doc.nama_wk??doc.wkid??"—"}</span>
+                  <span style={{fontSize:11,color:"#bbb",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={doc.item_name}>{doc.item_name}</span>
+                  <span style={{fontSize:11,color:"#666",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={doc.nama_kkks}>{doc.nama_kkks??"—"}</span>
+                  <span style={{fontSize:11,color:"#666"}}>{yr}</span>
+                  <span style={{fontSize:10,color:STATUS_COLOR[doc.doc_status]??"#555"}}>• {doc.doc_status}</span>
                 </div>
               );
             })}
           </div>
-        )}
-        {/* Pagination */}
-        <div style={{ display:"flex", justifyContent:"center", gap:8, padding:"16px 0" }}>
-          <button disabled={page===0} onClick={() => setPage(p=>p-1)}
-            style={{ padding:"5px 14px", borderRadius:4, border:"1px solid #383838",
-              background: page===0 ? "#1a1a1a" : "#2a2a2a",
-              color: page===0 ? "#444" : "#9e9e9e", cursor: page===0 ? "default":"pointer", fontSize:12 }}>
-            ← Prev
-          </button>
-          <span style={{ padding:"5px 10px", fontSize:12, color:"#555" }}>
-            Hal {page+1} / {Math.ceil(total/PAGE) || 1}
-          </span>
-          <button disabled={(page+1)*PAGE>=total} onClick={() => setPage(p=>p+1)}
-            style={{ padding:"5px 14px", borderRadius:4, border:"1px solid #383838",
-              background:(page+1)*PAGE>=total ? "#1a1a1a" : "#2a2a2a",
-              color:(page+1)*PAGE>=total ? "#444" : "#9e9e9e",
-              cursor:(page+1)*PAGE>=total ? "default":"pointer", fontSize:12 }}>
-            Next →
-          </button>
+          <div style={{padding:"5px 16px",borderTop:"1px solid #222",background:"#1e1e1e",display:"flex",alignItems:"center",flexShrink:0}}>
+        <span style={{fontSize:11,color:"#444"}}>{loading ? "..." : total+" dokumen"}</span>
+            <div style={{marginLeft:"auto",display:"flex",gap:3}}>
+              <button onClick={()=>setPage(0)} disabled={page===0} style={{background:"#2a2a2a",border:"1px solid #252525",borderRadius:4,padding:"2px 7px",color:page===0?"#252525":"#555",cursor:page===0?"default":"pointer",fontSize:11}}>«</button>
+              <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0} style={{background:"#2a2a2a",border:"1px solid #252525",borderRadius:4,padding:"2px 7px",color:page===0?"#252525":"#555",cursor:page===0?"default":"pointer",fontSize:11}}>‹</button>
+              {Array.from({length:Math.min(5,totalPages)},(_,i)=>{
+                const p=Math.max(0,Math.min(page-2,totalPages-5))+i;
+                return <button key={p} onClick={()=>setPage(p)} style={{background:p===page?"#1b3a1f":"#2a2a2a",border:"1px solid "+(p===page?"#2e7d32":"#252525"),borderRadius:4,padding:"2px 7px",color:p===page?"#66bb6a":"#444",cursor:"pointer",fontSize:11}}>{p+1}</button>;
+              })}
+              <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={page>=totalPages-1} style={{background:"#2a2a2a",border:"1px solid #252525",borderRadius:4,padding:"2px 7px",color:page>=totalPages-1?"#252525":"#555",cursor:page>=totalPages-1?"default":"pointer",fontSize:11}}>›</button>
+              <button onClick={()=>setPage(totalPages-1)} disabled={page>=totalPages-1} style={{background:"#2a2a2a",border:"1px solid #252525",borderRadius:4,padding:"2px 7px",color:page>=totalPages-1?"#252525":"#555",cursor:page>=totalPages-1?"default":"pointer",fontSize:11}}>»</button>
+            </div>
+          </div>
+        </div>
+        <div style={{flex:"0 0 45%",display:"flex",flexDirection:"column",overflow:"hidden",background:"#1c1c1c"}}>
+          <div style={{padding:"6px 16px",background:"#1e1e1e",borderBottom:"1px solid #252525",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+            <span style={{fontSize:11,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px"}}>Dokumen Viewer</span>
+            {selected&&<div style={{display:"flex",gap:8,alignItems:"center"}}>
+              {selected?.wkid&&<a href={"/wk/"+selected.wkid} style={{fontSize:11,color:"#66bb6a",textDecoration:"none"}}>Lihat WK</a>}
+              <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:18}}>x</button>
+            </div>}
+          </div>
+          <div style={{flex:1,overflow:"auto",padding:"16px 20px"}}>
+            {!selected?(
+              <div style={{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                <div style={{fontSize:36,marginBottom:12}}>📄</div>
+                <div style={{fontSize:13,color:"#383838"}}>Pilih dokumen untuk ditampilkan</div>
+              </div>
+            ):(
+              <>
+                <div style={{fontSize:15,color:"#66bb6a",fontWeight:500,marginBottom:4}}>{selected.nama_wk??selected.wkid}</div>
+                <div style={{fontSize:11,color:"#4a6fa5",fontFamily:"monospace",marginBottom:16}}>{selected.wkid}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 32px"}}>
+                  {[
+                    ["KKKS",selected.nama_kkks],
+                    ["Tipe",TYPE_LABEL[selected.item_type]??selected.item_type],
+                    ["Perihal",selected.item_name],
+                    ["Status",selected.doc_status],
+                    ["Tahun",selected.effective_date?.slice(0,4)],
+                    ["No. Dokumen",selected.reference_num],
+                    ["Tgl. Terbit",selected.issue_date],
+                    ["ID Dokumen",selected.information_item_id],
+                  ].map(([l,v])=>!v?null:(
+                    <div key={l as string} style={{display:"flex",borderBottom:"1px solid #222",padding:"6px 0"}}>
+                      <span style={{fontSize:12,color:"#555",width:130,flexShrink:0}}>{l}</span>
+                      <span style={{fontSize:12,color:l==="Status"?(STATUS_COLOR[v as string]??"#ccc"):"#ccc",wordBreak:"break-word"}}>{l==="Status"?"● "+v:v as string}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:16,padding:14,background:"#1a1a1a",borderRadius:6,border:"1px dashed #252525",textAlign:"center"}}>
+                  <div style={{fontSize:22,marginBottom:4}}>📄</div>
+                  <div style={{fontSize:11,color:"#3a3a3a"}}>Preview belum tersedia</div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

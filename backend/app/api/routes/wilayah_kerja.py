@@ -1,151 +1,149 @@
 """
-Wilayah Kerja endpoints — DBEP-Next
-PPDM39: LAND_RIGHT + LAND_ALIAS + INTEREST_SET + INT_SET_PARTNER + INT_SET_COMPONENT
+Wilayah Kerja endpoints — DBEP-Next v2
+Semua .maybe_single() diganti .limit(1) + akses via .data[0]
+Static routes SEBELUM dynamic {wk_id}
 """
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import date, datetime
+from typing import Optional
+from datetime import date
 
 from app.core.database import get_supabase
 
 router = APIRouter()
 
 
-# ── Pydantic Models ───────────────────────────────────────
+# ── Models ────────────────────────────────────────────────
 
 class WKCreate(BaseModel):
-    wkid: str                       = Field(..., min_length=3, max_length=40)
-    nama_wk: str                    = Field(..., min_length=2, max_length=255)
-    tipe_kontrak: str               = Field(..., description="PSC/PTM/PSC-EXT/JOB/JOA/COW/KONTRAK JASA")
-    lokasi: Optional[str]           = Field(None, description="ONSHORE/OFFSHORE/ONSHORE/OFFSHORE")
-    fase: Optional[str]             = Field(None, description="EXPLORATION/PRODUCTION/DEVELOPMENT")
-    tgl_ttd: Optional[date]         = None
-    tgl_efektif: Optional[date]     = None
-    tgl_berakhir: Optional[date]    = None
-    luas_km2_ori: Optional[float]   = None
-    ksid_operator: str              = Field(..., description="KSID dari BUSINESS_ASSOCIATE")
+    wkid: str                     = Field(..., min_length=3, max_length=40)
+    nama_wk: str                  = Field(..., min_length=2, max_length=255)
+    tipe_kontrak: str             = Field(...)
+    lokasi: Optional[str]         = None
+    fase: Optional[str]           = None
+    tgl_ttd: Optional[date]       = None
+    tgl_efektif: Optional[date]   = None
+    tgl_berakhir: Optional[date]  = None
+    luas_km2_ori: Optional[float] = None
+    ksid_operator: str            = Field(...)
 
 class WKUpdate(BaseModel):
-    nama_wk: Optional[str]          = None
-    tipe_kontrak: Optional[str]     = None
-    lokasi: Optional[str]           = None
-    fase: Optional[str]             = None
-    tgl_efektif: Optional[date]     = None
-    tgl_berakhir: Optional[date]    = None
-    luas_km2_ori: Optional[float]   = None
+    nama_wk: Optional[str]        = None
+    tipe_kontrak: Optional[str]   = None
+    lokasi: Optional[str]         = None
+    fase: Optional[str]           = None
+    tgl_efektif: Optional[date]   = None
+    tgl_berakhir: Optional[date]  = None
+    luas_km2_ori: Optional[float] = None
 
 class OperatorGanti(BaseModel):
-    ksid_operator_baru: str         = Field(..., description="KSID KKKS operator baru")
-    tgl_mulai: date                 = Field(..., description="Tanggal mulai operator baru")
-    tgl_kontrak_baru: Optional[date]= None
-    alasan: Optional[str]           = None
+    ksid_operator_baru: str       = Field(...)
+    tgl_mulai: date
+    tgl_kontrak_baru: Optional[date] = None
+    alasan: Optional[str]         = None
 
 class TerminasiWK(BaseModel):
     tgl_terminasi: date
-    alasan: Optional[str]           = None
-    nomor_surat: Optional[str]      = None
+    alasan: Optional[str]         = None
+    nomor_surat: Optional[str]    = None
 
 
 # ── Helpers ───────────────────────────────────────────────
 
-def _remark(nama: str, lokasi: str, fase: str, status: str, kelas: str = "CURRENT") -> str:
+def _remark(nama, lokasi, fase, status, kelas="CURRENT"):
     return f"WK:{nama}|LOC:{lokasi or 'UNKNOWN'}|STAGE:{fase or ''}|STATUS:{status}|CLASS:{kelas}"
 
-def _edate(d: Optional[date]) -> Optional[str]:
+def _edate(d):
     return d.isoformat() if d else None
 
+def _extract(remark: str, key: str) -> str:
+    import re
+    m = re.search(rf"{key}:([^|]+)", remark or "")
+    return m.group(1).strip() if m else ""
 
-# ── GET: Daftar WK ────────────────────────────────────────
+def _first(result):
+    """Ambil baris pertama dari result Supabase, atau None."""
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return None
 
-@router.get("/", summary="Daftar semua Wilayah Kerja")
+
+# ══════════════════════════════════════════════════════════
+# STATIC ROUTES — harus sebelum /{wk_id}
+# ══════════════════════════════════════════════════════════
+
+@router.get("/stats/ringkasan")
+async def stats_wk():
+    sb    = get_supabase()
+    total = sb.table("LAND_RIGHT").select("*", count="exact").head(True)\
+              .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").execute()
+    aktif = sb.table("LAND_RIGHT").select("*", count="exact").head(True)\
+              .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").eq("ACTIVE_IND", "Y").execute()
+    return {
+        "total_wk"    : total.count or 0,
+        "wk_aktif"    : aktif.count or 0,
+        "wk_terminasi": (total.count or 0) - (aktif.count or 0),
+    }
+
+
+@router.get("/utils/kkks-list")
+async def kkks_list(search: Optional[str] = Query(None)):
+    sb = get_supabase()
+    q  = sb.table("BUSINESS_ASSOCIATE").select(
+        "BUSINESS_ASSOCIATE_ID, BA_LONG_NAME, BA_SHORT_NAME"
+    ).eq("BA_TYPE", "KKKS").eq("ACTIVE_IND", "Y").order("BA_LONG_NAME").limit(200)
+    if search:
+        q = q.ilike("BA_LONG_NAME", f"%{search}%")
+    return q.execute().data
+
+
+# ══════════════════════════════════════════════════════════
+# LIST + CREATE
+# ══════════════════════════════════════════════════════════
+
+@router.get("/")
 async def list_wk(
-    status:  Optional[str] = Query(None, description="Y=Aktif, N=Terminasi"),
-    tipe:    Optional[str] = Query(None),
-    lokasi:  Optional[str] = Query(None),
-    search:  Optional[str] = Query(None),
-    limit:   int           = Query(50,  le=500),
-    offset:  int           = Query(0),
+    status: Optional[str] = Query(None),
+    tipe:   Optional[str] = Query(None),
+    lokasi: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    limit:  int = Query(50, le=500),
+    offset: int = Query(0),
 ):
     sb    = get_supabase()
     query = sb.table("v_wk_lengkap").select("*", count="exact")
-
     if status: query = query.eq("aktif", status)
     if tipe:   query = query.eq("tipe_kontrak", tipe)
     if lokasi: query = query.eq("lokasi", lokasi)
     if search:
         query = query.or_(
-            f"wkid.ilike.%{search}%,"
-            f"nama_wk.ilike.%{search}%,"
-            f"operator_utama.ilike.%{search}%"
+            f"wkid.ilike.%{search}%,nama_wk.ilike.%{search}%,operator_utama.ilike.%{search}%"
         )
-
-    query  = query.range(offset, offset + limit - 1)
-    result = query.execute()
-    return {"data": result.data, "count": result.count, "limit": limit, "offset": offset}
+    result = query.range(offset, offset + limit - 1).execute()
+    return {"data": result.data, "count": result.count}
 
 
-# ── GET: Detail satu WK ───────────────────────────────────
-
-@router.get("/{wk_id}", summary="Detail Wilayah Kerja")
-async def get_wk(wk_id: str):
-    sb = get_supabase()
-
-    # Main data dari view
-    wk = sb.table("v_wk_lengkap").select("*").eq("wkid", wk_id).maybe_single().execute()
-    if not wk.data:
-        raise HTTPException(404, f"WK '{wk_id}' tidak ditemukan")
-
-    # Riwayat operator (semua, aktif dan expired)
-    ops = sb.table("INT_SET_PARTNER").select(
-        "PARTNER_BA_ID, PARTNER_OBS_NO, ACTIVE_IND, INTEREST_SET_ROLE,"
-        "EFFECTIVE_DATE, EXPIRY_DATE, SOURCE"
-    ).eq("INTEREST_SET_ID", wk_id).eq("INTEREST_SET_ROLE", "OPERATOR")\
-     .order("PARTNER_OBS_NO").execute()
-
-    # Nama KKKS untuk tiap operator
-    ba_ids = [o["PARTNER_BA_ID"] for o in (ops.data or [])]
-    ba_names = {}
-    if ba_ids:
-        ba_res = sb.table("BUSINESS_ASSOCIATE").select(
-            "BUSINESS_ASSOCIATE_ID, BA_LONG_NAME, BA_SHORT_NAME"
-        ).in_("BUSINESS_ASSOCIATE_ID", ba_ids).execute()
-        ba_names = {b["BUSINESS_ASSOCIATE_ID"]: b["BA_LONG_NAME"] for b in (ba_res.data or [])}
-
-    operatorship = []
-    for o in (ops.data or []):
-        operatorship.append({
-            "ksid"       : o["PARTNER_BA_ID"],
-            "nama_kkks"  : ba_names.get(o["PARTNER_BA_ID"], o["PARTNER_BA_ID"]),
-            "aktif"      : o["ACTIVE_IND"] == "Y",
-            "tgl_efektif": o["EFFECTIVE_DATE"],
-            "tgl_berakhir": o["EXPIRY_DATE"],
-            "obs_no"     : o["PARTNER_OBS_NO"],
-        })
-
-    return {"wk": wk.data, "operatorship": operatorship}
-
-
-# ── POST: Tambah WK baru ──────────────────────────────────
-
-@router.post("/", status_code=201, summary="Tambah Wilayah Kerja baru")
+@router.post("/", status_code=201)
 async def create_wk(body: WKCreate):
     sb   = get_supabase()
     wkid = body.wkid.strip().upper()
 
-    # Cek duplikat
+    # Cek duplikat WKID
     existing = sb.table("LAND_RIGHT").select("LAND_RIGHT_ID")\
-                 .eq("LAND_RIGHT_ID", wkid).maybe_single().execute()
-    if existing.data:
+                 .eq("LAND_RIGHT_ID", wkid).limit(1).execute()
+    if _first(existing):
         raise HTTPException(409, f"WKID '{wkid}' sudah ada")
 
     # Cek KKKS operator ada
-    kkks = sb.table("BUSINESS_ASSOCIATE").select("BUSINESS_ASSOCIATE_ID, BA_LONG_NAME")\
-              .eq("BUSINESS_ASSOCIATE_ID", body.ksid_operator).maybe_single().execute()
-    if not kkks.data:
-        raise HTTPException(404, f"KKKS '{body.ksid_operator}' tidak ditemukan di BUSINESS_ASSOCIATE")
+    kkks_res = sb.table("BUSINESS_ASSOCIATE")\
+                 .select("BUSINESS_ASSOCIATE_ID, BA_LONG_NAME")\
+                 .eq("BUSINESS_ASSOCIATE_ID", body.ksid_operator)\
+                 .limit(1).execute()
+    kkks = _first(kkks_res)
+    if not kkks:
+        raise HTTPException(404, f"KKKS '{body.ksid_operator}' tidak ditemukan")
 
-    remark = _remark(body.nama_wk, body.lokasi or "", body.fase or "", "ACTIVE")
+    remark = _remark(body.nama_wk, body.lokasi, body.fase, "ACTIVE")
 
     # 1. LAND_RIGHT
     sb.table("LAND_RIGHT").insert({
@@ -161,10 +159,9 @@ async def create_wk(body: WKCreate):
         "REMARK"             : remark,
         "SOURCE"             : "DBEP",
         "ROW_CREATED_BY"     : "DBEP-NEXT",
-        "ROW_CREATED_DATE"   : date.today().isoformat(),
     }).execute()
 
-    # 2. LAND_ALIAS (nama WK)
+    # 2. LAND_ALIAS
     sb.table("LAND_ALIAS").insert({
         "LAND_RIGHT_SUBTYPE" : "LAND_AGREEMENT",
         "LAND_RIGHT_ID"      : wkid,
@@ -187,7 +184,7 @@ async def create_wk(body: WKCreate):
         "SOURCE"              : "DBEP",
     }).execute()
 
-    # 4. INT_SET_COMPONENT (link ke LAND_RIGHT)
+    # 4. INT_SET_COMPONENT
     sb.table("INT_SET_COMPONENT").insert({
         "INTEREST_SET_ID"     : wkid,
         "INTEREST_SET_SEQ_NO" : 1,
@@ -199,7 +196,7 @@ async def create_wk(body: WKCreate):
         "SOURCE"              : "DBEP",
     }).execute()
 
-    # 5. INT_SET_PARTNER (operator pertama)
+    # 5. INT_SET_PARTNER (operator)
     sb.table("INT_SET_PARTNER").insert({
         "INTEREST_SET_ID"     : wkid,
         "INTEREST_SET_SEQ_NO" : 1,
@@ -215,101 +212,121 @@ async def create_wk(body: WKCreate):
     }).execute()
 
     return {
-        "message"   : f"WK '{wkid}' berhasil ditambahkan",
-        "wkid"      : wkid,
-        "operator"  : kkks.data["BA_LONG_NAME"],
+        "message" : f"WK '{wkid}' berhasil ditambahkan",
+        "wkid"    : wkid,
+        "operator": kkks["BA_LONG_NAME"],
     }
 
 
-# ── PATCH: Update data WK ─────────────────────────────────
+# ══════════════════════════════════════════════════════════
+# DYNAMIC ROUTES — /{wk_id}
+# ══════════════════════════════════════════════════════════
 
-@router.patch("/{wk_id}", summary="Update data Wilayah Kerja")
-async def update_wk(wk_id: str, body: WKUpdate):
-    sb = get_supabase()
-
-    # Cek WK ada
-    wk = sb.table("LAND_RIGHT").select("*")\
-           .eq("LAND_RIGHT_ID", wk_id)\
-           .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
-           .maybe_single().execute()
-    if not wk.data:
+@router.get("/{wk_id}")
+async def get_wk(wk_id: str):
+    sb     = get_supabase()
+    wk_res = sb.table("v_wk_lengkap").select("*").eq("wkid", wk_id).limit(1).execute()
+    wk     = _first(wk_res)
+    if not wk:
         raise HTTPException(404, f"WK '{wk_id}' tidak ditemukan")
 
-    # Update LAND_RIGHT
-    lr_update: dict = {"ROW_CHANGED_BY": "DBEP-NEXT", "ROW_CHANGED_DATE": date.today().isoformat()}
-    if body.tipe_kontrak  is not None: lr_update["GRANTED_RIGHT_TYPE"] = body.tipe_kontrak
-    if body.tgl_efektif   is not None: lr_update["EFFECTIVE_DATE"]     = _edate(body.tgl_efektif)
-    if body.tgl_berakhir  is not None: lr_update["EXPIRY_DATE"]        = _edate(body.tgl_berakhir)
-    if body.luas_km2_ori  is not None: lr_update["GROSS_SIZE"]         = body.luas_km2_ori
+    ops = sb.table("INT_SET_PARTNER").select(
+        "PARTNER_BA_ID, PARTNER_OBS_NO, ACTIVE_IND, EFFECTIVE_DATE, EXPIRY_DATE"
+    ).eq("INTEREST_SET_ID", wk_id).eq("INTEREST_SET_ROLE", "OPERATOR")\
+     .order("PARTNER_OBS_NO").execute()
 
-    # Update REMARK jika ada perubahan nama/lokasi/fase
-    old_remark = wk.data.get("REMARK", "")
-    nama   = body.nama_wk or _extract(old_remark, "WK")
-    lokasi = body.lokasi  or _extract(old_remark, "LOC")
-    fase   = body.fase    or _extract(old_remark, "STAGE")
-    status = _extract(old_remark, "STATUS") or ("ACTIVE" if wk.data["ACTIVE_IND"] == "Y" else "TERMINATED")
+    ba_ids   = [o["PARTNER_BA_ID"] for o in (ops.data or [])]
+    ba_names = {}
+    if ba_ids:
+        ba = sb.table("BUSINESS_ASSOCIATE")\
+               .select("BUSINESS_ASSOCIATE_ID, BA_LONG_NAME")\
+               .in_("BUSINESS_ASSOCIATE_ID", ba_ids).execute()
+        ba_names = {b["BUSINESS_ASSOCIATE_ID"]: b["BA_LONG_NAME"] for b in (ba.data or [])}
+
+    operatorship = [{
+        "ksid"        : o["PARTNER_BA_ID"],
+        "nama_kkks"   : ba_names.get(o["PARTNER_BA_ID"], o["PARTNER_BA_ID"]),
+        "aktif"       : o["ACTIVE_IND"] == "Y",
+        "tgl_efektif" : o["EFFECTIVE_DATE"],
+        "tgl_berakhir": o["EXPIRY_DATE"],
+        "obs_no"      : o["PARTNER_OBS_NO"],
+    } for o in (ops.data or [])]
+
+    return {"wk": wk, "operatorship": operatorship}
+
+
+@router.patch("/{wk_id}")
+async def update_wk(wk_id: str, body: WKUpdate):
+    sb     = get_supabase()
+    wk_res = sb.table("LAND_RIGHT").select("*")\
+               .eq("LAND_RIGHT_ID", wk_id)\
+               .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
+               .limit(1).execute()
+    wk = _first(wk_res)
+    if not wk:
+        raise HTTPException(404, f"WK '{wk_id}' tidak ditemukan")
+
+    lr_update: dict = {"ROW_CHANGED_BY": "DBEP-NEXT"}
+    if body.tipe_kontrak is not None: lr_update["GRANTED_RIGHT_TYPE"] = body.tipe_kontrak
+    if body.tgl_efektif  is not None: lr_update["EFFECTIVE_DATE"]     = _edate(body.tgl_efektif)
+    if body.tgl_berakhir is not None: lr_update["EXPIRY_DATE"]        = _edate(body.tgl_berakhir)
+    if body.luas_km2_ori is not None: lr_update["GROSS_SIZE"]         = body.luas_km2_ori
+
+    old_r  = wk.get("REMARK", "")
+    nama   = body.nama_wk    or _extract(old_r, "WK")
+    lokasi = body.lokasi     or _extract(old_r, "LOC")
+    fase   = body.fase       or _extract(old_r, "STAGE")
+    status = _extract(old_r, "STATUS") or ("ACTIVE" if wk["ACTIVE_IND"] == "Y" else "TERMINATED")
     lr_update["REMARK"] = _remark(nama, lokasi, fase, status)
 
     sb.table("LAND_RIGHT").update(lr_update)\
       .eq("LAND_RIGHT_ID", wk_id)\
       .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").execute()
 
-    # Update LAND_ALIAS jika nama berubah
     if body.nama_wk:
         sb.table("LAND_ALIAS").update({
-            "ALIAS_LONG_NAME"  : body.nama_wk,
-            "ALIAS_SHORT_NAME" : body.nama_wk[:30],
+            "ALIAS_LONG_NAME" : body.nama_wk,
+            "ALIAS_SHORT_NAME": body.nama_wk[:30],
         }).eq("LAND_RIGHT_ID", wk_id).eq("LR_ALIAS_ID", "WK_NAME").execute()
 
     return {"message": f"WK '{wk_id}' berhasil diupdate"}
 
 
-def _extract(remark: str, key: str) -> str:
-    """Ambil nilai dari format WK:...|LOC:...|STAGE:..."""
-    import re
-    m = re.search(rf"{key}:([^|]+)", remark)
-    return m.group(1).strip() if m else ""
-
-
-# ── POST: Ganti operator ──────────────────────────────────
-
-@router.post("/{wk_id}/ganti-operator", summary="Ganti KKKS Operator WK")
+@router.post("/{wk_id}/ganti-operator")
 async def ganti_operator(wk_id: str, body: OperatorGanti):
-    sb = get_supabase()
-
-    # Cek WK ada dan aktif
-    wk = sb.table("LAND_RIGHT").select("LAND_RIGHT_ID, ACTIVE_IND")\
-           .eq("LAND_RIGHT_ID", wk_id).eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
-           .maybe_single().execute()
-    if not wk.data:
+    sb     = get_supabase()
+    wk_res = sb.table("LAND_RIGHT").select("LAND_RIGHT_ID, ACTIVE_IND")\
+               .eq("LAND_RIGHT_ID", wk_id)\
+               .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
+               .limit(1).execute()
+    wk = _first(wk_res)
+    if not wk:
         raise HTTPException(404, f"WK '{wk_id}' tidak ditemukan")
-    if wk.data["ACTIVE_IND"] != "Y":
-        raise HTTPException(400, f"WK '{wk_id}' sudah terminasi — tidak bisa ganti operator")
+    if wk["ACTIVE_IND"] != "Y":
+        raise HTTPException(400, f"WK '{wk_id}' sudah terminasi")
 
-    # Cek KKKS baru ada
-    kkks = sb.table("BUSINESS_ASSOCIATE").select("BUSINESS_ASSOCIATE_ID, BA_LONG_NAME")\
-              .eq("BUSINESS_ASSOCIATE_ID", body.ksid_operator_baru).maybe_single().execute()
-    if not kkks.data:
+    kkks_res = sb.table("BUSINESS_ASSOCIATE")\
+                 .select("BUSINESS_ASSOCIATE_ID, BA_LONG_NAME")\
+                 .eq("BUSINESS_ASSOCIATE_ID", body.ksid_operator_baru)\
+                 .limit(1).execute()
+    kkks = _first(kkks_res)
+    if not kkks:
         raise HTTPException(404, f"KKKS '{body.ksid_operator_baru}' tidak ditemukan")
 
-    # Nonaktifkan semua operator lama
     sb.table("INT_SET_PARTNER").update({
-        "ACTIVE_IND"         : "N",
-        "EXPIRY_DATE"        : body.tgl_mulai.isoformat(),
-        "REMARK"             : body.alasan or "Pergantian operator",
-        "ROW_CHANGED_BY"     : "DBEP-NEXT",
-        "ROW_CHANGED_DATE"   : date.today().isoformat(),
+        "ACTIVE_IND"     : "N",
+        "EXPIRY_DATE"    : body.tgl_mulai.isoformat(),
+        "REMARK"         : body.alasan or "Pergantian operator",
+        "ROW_CHANGED_BY" : "DBEP-NEXT",
     }).eq("INTEREST_SET_ID", wk_id)\
       .eq("INTEREST_SET_ROLE", "OPERATOR")\
       .eq("ACTIVE_IND", "Y").execute()
 
-    # Cari obs_no tertinggi yang ada
     existing = sb.table("INT_SET_PARTNER").select("PARTNER_OBS_NO")\
                  .eq("INTEREST_SET_ID", wk_id)\
                  .order("PARTNER_OBS_NO", desc=True).limit(1).execute()
     next_obs = (existing.data[0]["PARTNER_OBS_NO"] + 1) if existing.data else 1
 
-    # Insert operator baru
     sb.table("INT_SET_PARTNER").insert({
         "INTEREST_SET_ID"     : wk_id,
         "INTEREST_SET_SEQ_NO" : 1,
@@ -326,98 +343,80 @@ async def ganti_operator(wk_id: str, body: OperatorGanti):
     }).execute()
 
     return {
-        "message"         : f"Operator WK '{wk_id}' berhasil diganti",
-        "operator_baru"   : kkks.data["BA_LONG_NAME"],
-        "berlaku_mulai"   : body.tgl_mulai.isoformat(),
+        "message"      : f"Operator WK '{wk_id}' berhasil diganti",
+        "operator_baru": kkks["BA_LONG_NAME"],
+        "berlaku_mulai": body.tgl_mulai.isoformat(),
     }
 
 
-# ── POST: Terminasi WK ────────────────────────────────────
-
-@router.post("/{wk_id}/terminasi", summary="Terminasi Wilayah Kerja")
+@router.post("/{wk_id}/terminasi")
 async def terminasi_wk(wk_id: str, body: TerminasiWK):
-    sb = get_supabase()
-
-    wk = sb.table("LAND_RIGHT").select("LAND_RIGHT_ID, ACTIVE_IND")\
-           .eq("LAND_RIGHT_ID", wk_id).eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
-           .maybe_single().execute()
-    if not wk.data:
+    sb     = get_supabase()
+    wk_res = sb.table("LAND_RIGHT").select("LAND_RIGHT_ID, ACTIVE_IND, REMARK")\
+               .eq("LAND_RIGHT_ID", wk_id)\
+               .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
+               .limit(1).execute()
+    wk = _first(wk_res)
+    if not wk:
         raise HTTPException(404, f"WK '{wk_id}' tidak ditemukan")
-    if wk.data["ACTIVE_IND"] != "Y":
+    if wk["ACTIVE_IND"] != "Y":
         raise HTTPException(400, f"WK '{wk_id}' sudah terminasi sebelumnya")
 
-    today = date.today().isoformat()
-
-    # 1. Update LAND_RIGHT
-    old_remark = sb.table("LAND_RIGHT").select("REMARK")\
-                   .eq("LAND_RIGHT_ID", wk_id).maybe_single().execute()
-    old_r = old_remark.data.get("REMARK","") if old_remark.data else ""
-    new_remark = old_r.replace("|STATUS:ACTIVE", "|STATUS:TERMINATED")\
-                      .replace("|STATUS:TERMINATING", "|STATUS:TERMINATED")
-    if "STATUS:" not in new_remark:
-        new_remark += "|STATUS:TERMINATED"
+    old_r  = wk.get("REMARK", "")
+    new_r  = _remark(_extract(old_r,"WK"), _extract(old_r,"LOC"),
+                     _extract(old_r,"STAGE"), "TERMINATED")
     if body.nomor_surat:
-        new_remark += f"|SURAT:{body.nomor_surat}"
+        new_r += f"|SURAT:{body.nomor_surat}"
 
+    today = date.today().isoformat()
     sb.table("LAND_RIGHT").update({
-        "ACTIVE_IND"         : "N",
-        "EXPIRY_DATE"        : body.tgl_terminasi.isoformat(),
-        "INACTIVATION_DATE"  : body.tgl_terminasi.isoformat(),
-        "REMARK"             : new_remark,
-        "ROW_CHANGED_BY"     : "DBEP-NEXT",
-        "ROW_CHANGED_DATE"   : today,
+        "ACTIVE_IND"       : "N",
+        "EXPIRY_DATE"      : body.tgl_terminasi.isoformat(),
+        "INACTIVATION_DATE": body.tgl_terminasi.isoformat(),
+        "REMARK"           : new_r,
+        "ROW_CHANGED_BY"   : "DBEP-NEXT",
+        "ROW_CHANGED_DATE" : today,
     }).eq("LAND_RIGHT_ID", wk_id)\
       .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").execute()
 
-    # 2. Nonaktifkan semua operator
     sb.table("INT_SET_PARTNER").update({
-        "ACTIVE_IND"      : "N",
-        "EXPIRY_DATE"     : body.tgl_terminasi.isoformat(),
-        "REMARK"          : f"WK terminasi: {body.alasan or '-'}",
-        "ROW_CHANGED_BY"  : "DBEP-NEXT",
-        "ROW_CHANGED_DATE": today,
+        "ACTIVE_IND"     : "N",
+        "EXPIRY_DATE"    : body.tgl_terminasi.isoformat(),
+        "REMARK"         : f"WK terminasi: {body.alasan or '-'}",
+        "ROW_CHANGED_BY" : "DBEP-NEXT",
     }).eq("INTEREST_SET_ID", wk_id).eq("ACTIVE_IND", "Y").execute()
 
-    # 3. Nonaktifkan INTEREST_SET
     sb.table("INTEREST_SET").update({
-        "ACTIVE_IND"      : "N",
-        "EXPIRY_DATE"     : body.tgl_terminasi.isoformat(),
-        "ROW_CHANGED_BY"  : "DBEP-NEXT",
-        "ROW_CHANGED_DATE": today,
+        "ACTIVE_IND"     : "N",
+        "EXPIRY_DATE"    : body.tgl_terminasi.isoformat(),
+        "ROW_CHANGED_BY" : "DBEP-NEXT",
     }).eq("INTEREST_SET_ID", wk_id).eq("ACTIVE_IND", "Y").execute()
 
     return {
-        "message"          : f"WK '{wk_id}' berhasil diterminasi",
-        "tgl_terminasi"    : body.tgl_terminasi.isoformat(),
-        "checklist_url"    : f"/wk/{wk_id}/checklist-serah-terima",
+        "message"       : f"WK '{wk_id}' berhasil diterminasi",
+        "tgl_terminasi" : body.tgl_terminasi.isoformat(),
     }
 
 
-# ── GET: Stats ────────────────────────────────────────────
+@router.delete("/{wk_id}")
+async def delete_wk(wk_id: str):
+    sb     = get_supabase()
+    wk_res = sb.table("LAND_RIGHT").select("LAND_RIGHT_ID, ACTIVE_IND")\
+               .eq("LAND_RIGHT_ID", wk_id)\
+               .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT")\
+               .limit(1).execute()
+    wk = _first(wk_res)
+    if not wk:
+        raise HTTPException(404, f"WK '{wk_id}' tidak ditemukan")
+    if wk["ACTIVE_IND"] == "Y":
+        raise HTTPException(400, f"WK '{wk_id}' masih AKTIF — terminasi dulu")
 
-@router.get("/stats/ringkasan", summary="Statistik ringkasan WK")
-async def stats_wk():
-    sb    = get_supabase()
-    total = sb.table("LAND_RIGHT").select("*", count="exact").head(True)\
-              .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").execute()
-    aktif = sb.table("LAND_RIGHT").select("*", count="exact").head(True)\
-              .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").eq("ACTIVE_IND", "Y").execute()
-    return {
-        "total_wk"    : total.count or 0,
-        "wk_aktif"    : aktif.count or 0,
-        "wk_terminasi": (total.count or 0) - (aktif.count or 0),
-    }
+    sb.table("INT_SET_PARTNER").delete().eq("INTEREST_SET_ID", wk_id).execute()
+    sb.table("INT_SET_COMPONENT").delete().eq("INTEREST_SET_ID", wk_id).execute()
+    sb.table("INTEREST_SET").delete().eq("INTEREST_SET_ID", wk_id).execute()
+    sb.table("LAND_ALIAS").delete().eq("LAND_RIGHT_ID", wk_id).execute()
+    sb.table("LAND_RIGHT").delete()\
+      .eq("LAND_RIGHT_ID", wk_id)\
+      .eq("LAND_RIGHT_SUBTYPE", "LAND_AGREEMENT").execute()
 
-
-# ── GET: KKKS list (untuk dropdown form) ─────────────────
-
-@router.get("/utils/kkks-list", summary="Daftar KKKS untuk dropdown")
-async def kkks_list(search: Optional[str] = Query(None)):
-    sb = get_supabase()
-    q  = sb.table("BUSINESS_ASSOCIATE").select(
-        "BUSINESS_ASSOCIATE_ID, BA_LONG_NAME, BA_SHORT_NAME, BA_TYPE"
-    ).eq("BA_TYPE", "KKKS").eq("ACTIVE_IND", "Y").order("BA_LONG_NAME").limit(200)
-    if search:
-        q = q.ilike("BA_LONG_NAME", f"%{search}%")
-    result = q.execute()
-    return result.data
+    return {"message": f"WK '{wk_id}' berhasil dihapus permanen", "wkid": wk_id}

@@ -59,6 +59,7 @@ export default function WKDetailPage() {
   const [termSurat, setTermSurat]   = useState("");
   const [termLoading, setTermLoading] = useState(false);
   const [termMsg, setTermMsg]         = useState("");
+  const [dokumen, setDokumen] = useState<any[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -66,6 +67,12 @@ export default function WKDetailPage() {
       // Load dari view (frontend langsung ke Supabase)
       const { data: wkData } = await sb.from("v_wk_lengkap").select("*").eq("wkid", id).single();
       setWk(wkData ?? null);
+
+      // Fetch dokumen terkait WK ini
+      const { data: docData } = await sb.from("v_dokumen")
+        .select("information_item_id,item_type,item_name,effective_date,doc_status")
+        .eq("wkid", id);
+      setDokumen(docData ?? []);
 
       // Load operatorship
       const { data: opsData } = await sb.from("INT_SET_PARTNER")
@@ -209,6 +216,119 @@ export default function WKDetailPage() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Section Dokumen Terkait */}
+      <div style={{ padding:"0 20px 20px" }}>
+        <div style={{ background:"#1e1e1e", border:"1px solid #2a2a2a", borderRadius:8, padding:16 }}>
+          <div style={{ fontSize:11, color:"#555", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+            <span>Dokumen Terkait</span>
+            <span style={{ fontSize:10, color:"#444", fontWeight:400 }}>{dokumen.length} dokumen</span>
+          </div>
+          {dokumen.length === 0 ? (
+            <div style={{ fontSize:12, color:"#444", padding:"20px 0" }}>Belum ada dokumen untuk WK ini.</div>
+          ) : (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:10 }}>
+              {(() => {
+                const byType: Record<string, any[]> = dokumen.reduce((acc:any, d:any) => {
+                  const t = d.item_type ?? "LAINNYA";
+                  (acc[t] ??= []).push(d);
+                  return acc;
+                }, {});
+
+                type Grp = { key:string; label:string; route:string; subs?:{type:string;label:string}[] };
+                const GROUPS: Grp[] = [
+                  { key:"WPB_EKSPLORASI",   label:"WP&B Eksplorasi",   route:"wpb-eksplorasi" },
+                  {
+                    key:"AFE_EKSPLORASI",   label:"AFE Eksplorasi",    route:"afe",
+                    subs:[
+                      { type:"AFE_STUDI",         label:"AFE Studi" },
+                      { type:"AFE_SURVAI",        label:"AFE Survai" },
+                      { type:"AFE_PEMBORAN_EKS",  label:"AFE Pemboran Eks" },
+                    ],
+                  },
+                  { key:"WPB_EKSPLOITASI",  label:"WP&B Eksploitasi",  route:"wpb-eksploitasi" },
+                  {
+                    key:"AFE_EKSPLOITASI",  label:"AFE Eksploitasi",   route:"afe-eksploitasi",
+                    subs:[
+                      { type:"AFE_PEMBORAN_EPT",  label:"AFE Pemboran Ept" },
+                      { type:"AFE_WORKOVER",      label:"AFE Workover" },
+                      { type:"AFE_FASPROD",       label:"AFE Fasilitas Produksi" },
+                      { type:"AFE_NON_EPT",       label:"Non-AFE Ept" },
+                    ],
+                  },
+                  {
+                    key:"POD_GROUP",        label:"POD / POP / POFD",  route:"pod",
+                    subs:[
+                      { type:"POD",  label:"POD" },
+                      { type:"POP",  label:"POP" },
+                      { type:"POFD", label:"POFD" },
+                    ],
+                  },
+                  {
+                    key:"PMF_GROUP",        label:"PMF / EOR",         route:"pmf",
+                    subs:[
+                      { type:"PMF", label:"PMF" },
+                      { type:"EOR", label:"EOR" },
+                    ],
+                  },
+                  { key:"RESOURCES_PL",     label:"Resources P/L",     route:"resources" },
+                  { key:"CADANGAN",         label:"Cadangan Migas",    route:"cadangan" },
+                ];
+
+                const countGrp = (g:Grp) => g.subs
+                  ? g.subs.reduce((s,x)=>s+(byType[x.type]?.length??0),0)
+                  : (byType[g.key]?.length??0);
+
+                const visible = GROUPS.filter(g => countGrp(g) > 0);
+
+                return visible.map((g) => {
+                  const total = countGrp(g);
+                  if (g.subs) {
+                    return (
+                      <div key={g.key} style={{ background:"#1a1a1a", border:"1px solid #2a2a2a", borderRadius:6, padding:"10px 12px", display:"flex", flexDirection:"column" }}>
+                        <div style={{ fontSize:9, color:"#444", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.5px" }}>{g.label}</div>
+                        <div style={{ fontSize:20, color:"#66bb6a", fontWeight:600, marginBottom:6 }}>{total}</div>
+                        <div style={{ borderTop:"1px solid #252525", paddingTop:6, display:"flex", flexDirection:"column", gap:3 }}>
+                          {g.subs.map((s) => {
+                            const n = byType[s.type]?.length ?? 0;
+                            const href = `/dokumen/${g.route}?wkid=${id}&type=${s.type}`;
+                            return (
+                              <a key={s.type} href={href}
+                                 style={{
+                                   display:"flex", justifyContent:"space-between", alignItems:"center",
+                                   fontSize:10, textDecoration:"none",
+                                   color: n>0 ? "#9e9e9e" : "#444",
+                                   padding:"2px 0",
+                                   pointerEvents: n>0 ? "auto" : "none",
+                                 }}>
+                                <span>{s.label}</span>
+                                <span style={{ color: n>0 ? "#e0e0e0" : "#444", fontFamily:"monospace" }}>{n}</span>
+                              </a>
+                            );
+                          })}
+                        </div>
+                        <a href={`/dokumen/${g.route}?wkid=${id}`}
+                           style={{ fontSize:10, color:"#42a5f5", textDecoration:"none", marginTop:6, borderTop:"1px solid #252525", paddingTop:5 }}>
+                          Lihat semua →
+                        </a>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={g.key} style={{ background:"#1a1a1a", border:"1px solid #2a2a2a", borderRadius:6, padding:"10px 12px" }}>
+                      <div style={{ fontSize:9, color:"#444", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px" }}>{g.label}</div>
+                      <div style={{ fontSize:20, color:"#66bb6a", fontWeight:600, marginBottom:4 }}>{total}</div>
+                      <a href={`/dokumen/${g.route}?wkid=${id}&type=${g.key}`} style={{ fontSize:10, color:"#42a5f5", textDecoration:"none" }}>
+                        Lihat →
+                      </a>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
         </div>
       </div>
 
