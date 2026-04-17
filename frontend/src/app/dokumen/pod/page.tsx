@@ -31,6 +31,7 @@ export default function Page() {
   const [filterWK, setFilterWK] = useState(() => searchParams?.get("wkid") ?? "");
   const [filterTahun, setFilterTahun] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterType, setFilterType] = useState(() => searchParams?.get("type") ?? "");
   const [search, setSearch] = useState("");
   const [wkList, setWkList] = useState<any[]>([]);
   const PAGE = 50;
@@ -53,15 +54,16 @@ export default function Page() {
     if (filterWK) q = q.eq("wkid",filterWK);
     if (filterTahun) q = q.gte("effective_date",filterTahun+"-01-01").lte("effective_date",filterTahun+"-12-31");
     if (filterStatus) q = q.eq("doc_status",filterStatus);
+    if (filterType) q = q.eq("item_type",filterType);
     if (search) q = q.ilike("item_name","%"+search+"%");
     const { data, count } = await q;
     setDocs(data??[]);
     setTotal(count??0);
     setLoading(false);
-  }, [page,filterWK,filterTahun,filterStatus,search]);
+  }, [page,filterWK,filterTahun,filterStatus,filterType,search]);
 
   useEffect(()=>{load();},[load]);
-  useEffect(()=>{setPage(0);setSelected(null);},[ filterWK,filterTahun,filterStatus,search]);
+  useEffect(()=>{setPage(0);setSelected(null);},[ filterWK,filterTahun,filterStatus,filterType,search]);
 
   const years = Array.from({length:20},(_,i)=>String(new Date().getFullYear()-i));
   const totalPages = Math.ceil(total/PAGE);
@@ -89,10 +91,16 @@ export default function Page() {
           <option value="">Semua Status</option>
           {["ORIGINAL","REVISI","REVISI2","DRAFT","FINAL"].map(s=><option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={ss(!!filterType)}>
+          <option value="">Semua Tipe</option>
+          <option value="POD">POD</option>
+          <option value="POP">POP</option>
+          <option value="POFD">POFD</option>
+        </select>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari judul..."
           style={{background:"#2a2a2a",border:"1px solid #383838",borderRadius:5,padding:"5px 10px",color:"#e0e0e0",fontSize:11,width:150,outline:"none"}}/>
-        {(filterWK||filterTahun||filterStatus||search)&&
-          <button onClick={()=>{setFilterWK("");setFilterTahun("");setFilterStatus("");setSearch("");}}
+        {(filterWK||filterTahun||filterStatus||filterType||search)&&
+          <button onClick={()=>{setFilterWK("");setFilterTahun("");setFilterStatus("");setFilterType("");setSearch("");}}
             style={{background:"none",border:"1px solid #383838",borderRadius:4,padding:"4px 8px",color:"#666",fontSize:10,cursor:"pointer"}}>x Reset</button>}
       </div>
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
