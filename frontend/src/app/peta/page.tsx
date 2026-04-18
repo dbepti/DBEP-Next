@@ -49,10 +49,7 @@ export default function PetaWK() {
 
     map.addSource("wk", {
       type: "geojson",
-      data: { type: "FeatureCollection", features } as any,
-      cluster: true,
-      clusterMaxZoom: 6,
-      clusterRadius: 40,
+      data: { type: "FeatureCollection", features } as any
     });
 
     // Cluster circle
@@ -86,11 +83,9 @@ export default function PetaWK() {
 
     // Individual WK (unclustered)
     map.addLayer({ id: "wk-fill", type: "fill", source: "wk",
-      filter: ["!", ["has", "point_count"]],
       paint: { "fill-color": ["case", ["==", ["get", "active_ind"], "Y"], "#1b5e20", "#424242"], "fill-opacity": 0.4 }
     });
     map.addLayer({ id: "wk-line", type: "line", source: "wk",
-      filter: ["!", ["has", "point_count"]],
       paint: { "line-color": ["case", ["==", ["get", "active_ind"], "Y"], "#66bb6a", "#616161"], "line-width": 1 }
     });
     map.addLayer({ id: "wk-hl", type: "fill", source: "wk", paint: { "fill-color": "#2e7d32", "fill-opacity": 0.7 }, filter: ["==", ["get", "wkid"], ""] });
