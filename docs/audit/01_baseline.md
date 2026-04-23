@@ -306,3 +306,44 @@ Sprint 2 (FK application) dapat dimulai langsung.
 - 017: RM_INFO_ITEM_CONTENT → RM_INFORMATION_ITEM (composite)
 
 **Sprint 3+**: Reference FKs (R\_\* tables), CK constraints, UOM framework
+
+## Sprint 2 Progress
+
+### Migration 011 - Alias FKs (COMPLETE)
+
+**Applied 2 FKs**:
+
+| FK Name   | Relation                      | Type                     | Status  |
+| --------- | ----------------------------- | ------------------------ | ------- |
+| LA_LR_FK  | LAND_ALIAS → LAND_RIGHT       | Composite (SUBTYPE + ID) | Applied |
+| BAA_BA_FK | BA_ALIAS → BUSINESS_ASSOCIATE | Simple                   | Applied |
+
+**Data state at apply**:
+
+- LAND_ALIAS: 732 rows (6 more than Sprint 1 audit of 726)
+- BA_ALIAS: 0 rows (FK for future-proofing)
+
+**App regression test**: Passed on 7 pages.
+
+**Bug discovered during test** (NOT caused by FK):
+
+- Dashboard KPI "155 WK Aktif / Sedang berproduksi" is misleading
+- Root cause: PRODUCING_IND all NULL in LAND_RIGHT
+- Source data exists in List_WK_Migas_Status_1_Februari_2026.xlsx
+- To be fixed in Migration 020 (data reconciliation track)
+
+**Excel source data reveals** (for 160 WK records):
+
+- 82 WK PRODUKSI (producing)
+- 24 WK PENGEMBANGAN (development)
+- 54 WK NON-PRODUKSI (non-producing, exploration)
+
+### Sprint 2 Remaining
+
+- Migration 012: Interest Set family FKs (3 FK)
+- Migration 013: Records Management FKs (2 FK)
+- Migration 014: Obligation Component FK (1 FK)
+
+### Data Reconciliation Track (Separate from FK Work)
+
+- Migration 020: Populate PRODUCING_IND from Excel 1 Feb 2026
