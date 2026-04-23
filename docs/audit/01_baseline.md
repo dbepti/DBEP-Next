@@ -252,3 +252,57 @@ di-populate untuk map AD users ke BUSINESS_ASSOCIATE.
 **Semua 10 FK priority dapat di-apply tanpa cleanup.**
 
 Sprint 2 (FK application) dapat dimulai langsung.
+
+## Sprint 1 Summary
+
+### Timeline
+
+- **Day 1** (23 Apr 2026): Baseline audit - DB info, extensions, schema
+- **Day 2** (23 Apr 2026): Constraint coverage audit
+- **Day 3** (23 Apr 2026): Orphan records check
+- **Day 5** (23 Apr 2026): First FK applied (FC_F_FK)
+
+### Deliverables
+
+1. **Audit baseline document** — this file
+2. **Migration 010** — `database/migrations/010_apply_field_component_fk.sql`
+3. **FK deployed** — FIELD_COMPONENT.FIELD_ID → FIELD.FIELD_ID active
+
+### Key Findings
+
+✅ **Good news**:
+
+- PostgreSQL 17.6 aarch64, 75 MB metadata-only database
+- 100% PK coverage on all 30 active tables
+- 0 orphan records across 10 critical FK relations
+- ETL quality excellent (integrity maintained at application level)
+- All app pages working post-FK application
+
+⚠️ **Needs attention**:
+
+- Only 5/30 tables have FK applied (17% coverage)
+- 22 FKs still needed in subsequent sprints
+- Dead rows 22-25% in INTEREST_SET family (VACUUM needed)
+- pgvector extension missing (needed for SIGMA RAG)
+- Empty audit columns (BA_ALIAS, RESERVE_ENTITY.CREATED_BY_BA_ID)
+
+### Pre-existing Bugs Noted (Not from FK)
+
+- **Map tooltip z-ordering**: WK1427 Pertamina EP (113,629 km² consolidated
+  asset) overlaps smaller WKs, tooltip picks largest polygon first.
+  Example: hovering WK1120 Senoro-Toili area shows WK1427 Pertamina EP.
+  → To be fixed in dedicated map sprint.
+
+### Next Steps
+
+**Sprint 2** (1 week): Apply remaining 9 safe FKs
+
+- 011: LAND_ALIAS → LAND_RIGHT (composite)
+- 012: BA_ALIAS → BUSINESS_ASSOCIATE
+- 013: OBLIGATION_COMPONENT → OBLIGATION (composite)
+- 014: INT_SET_PARTNER → BA + INTEREST_SET (2 FKs)
+- 015: INT_SET_COMPONENT → INTEREST_SET
+- 016: RM_DOCUMENT → RM_INFORMATION_ITEM (composite)
+- 017: RM_INFO_ITEM_CONTENT → RM_INFORMATION_ITEM (composite)
+
+**Sprint 3+**: Reference FKs (R\_\* tables), CK constraints, UOM framework
