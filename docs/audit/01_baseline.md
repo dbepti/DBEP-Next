@@ -139,3 +139,116 @@ Hanya **75 MB metadata**. Dokumen PDF aktual disimpan terpisah.
 - Query 3 corrected (top 30 tables by volume)
 - Query 4 (constraint per table)
 - Query 5 (orphan records check)
+
+## Constraint Coverage Analysis
+
+### Summary
+
+| Constraint Type   | Coverage            | Status      |
+| ----------------- | ------------------- | ----------- |
+| Primary Key       | 30/30 tables (100%) | ✅ Complete |
+| Foreign Key       | 5/30 tables (17%)   | ⚠️ Partial  |
+| Check Constraint  | 24/30 tables (80%)  | ✅ Mostly   |
+| Unique Constraint | 0/30 tables         | Not used    |
+
+### Foreign Key Distribution
+
+Hanya 5 tabel yang punya FK applied:
+
+| Tabel               | FK Count | Module  |
+| ------------------- | -------- | ------- |
+| RESENT_VOL_SUMMARY  | 5        | Reserve |
+| SP_BOUNDARY         | 3        | Spatial |
+| RESENT_PRODUCT      | 1        | Reserve |
+| SP_POLYGON          | 1        | Spatial |
+| SPATIAL_DESCRIPTION | 1        | Spatial |
+
+### FK Gap Analysis
+
+**26 tabel aktif dengan 0 FK** perlu remediation. Priority ranking:
+
+**Tier 1 — Master data (must fix)**:
+
+- LAND_RIGHT, LAND_ALIAS
+- BUSINESS_ASSOCIATE, BA_ALIAS
+- FIELD, FIELD_COMPONENT
+- OBLIGATION, OBLIGATION_COMPONENT
+- RESERVE_ENTITY
+- INT_SET_PARTNER, INT_SET_COMPONENT, INTEREST_SET
+
+**Tier 2 — Document module (should fix)**:
+
+- RM_DOCUMENT, RM_INFORMATION_ITEM, RM_INFO_ITEM_CONTENT
+
+**Tier 3 — Reference tables (nice to have)**:
+
+- Semua R\_\* tables (low risk, low impact)
+
+### Check Constraint Observations
+
+CK coverage bervariasi — 80% tabel punya setidaknya 1 CK.
+Top 3 dengan CK terbanyak:
+
+- SPATIAL_DESCRIPTION: 22 CK (heavy validation spatial)
+- LAND_RIGHT: 11 CK (bisnis validation banyak)
+- OBLIGATION_COMPONENT, INT_SET_PARTNER, RM_INFO_ITEM_CONTENT: 7 CK each
+
+Tabel tanpa CK:
+
+- CEKUNGAN (custom table, not PPDM)
+- SP_BOUNDARY, SP_POLYGON (spatial, validation via PostGIS)
+
+### Root Cause Hypothesis
+
+Pattern FK applied di `RESENT_*` dan `SP_*` vs tidak di modul lain
+kemungkinan karena **ETL loader berbeda**:
+
+- Loader A (SQL-based) untuk Reserve + Spatial → preserve FK
+- Loader B (custom script) untuk modul lain → skip FK for speed
+
+Ini pattern normal di migrasi dari system legacy.
+
+## Orphan Records Analysis
+
+### Summary
+
+**Hasil**: 0 orphan records ditemukan di 10 relasi critical.
+
+| FK Relation                                | Child Rows | Orphans | Status          |
+| ------------------------------------------ | ---------- | ------- | --------------- |
+| LAND_ALIAS → LAND_RIGHT                    | 732        | 0       | ✅ Safe         |
+| FIELD_COMPONENT → FIELD                    | 1,012      | 0       | ✅ Safe         |
+| OBLIGATION_COMPONENT → OBLIGATION          | 1,450      | 0       | ✅ Safe         |
+| INT_SET_PARTNER.PARTNER_BA_ID → BA         | 847        | 0       | ✅ Safe         |
+| INT_SET_PARTNER → INTEREST_SET             | 847        | 0       | ✅ Safe         |
+| INT_SET_COMPONENT → INTEREST_SET           | 711        | 0       | ✅ Safe         |
+| RM_DOCUMENT → RM_INFORMATION_ITEM          | 16,793     | 0       | ✅ Safe         |
+| RM_INFO_ITEM_CONTENT → RM_INFORMATION_ITEM | 16,793     | 0       | ✅ Safe         |
+| BA_ALIAS → BUSINESS_ASSOCIATE              | 0          | 0       | ✅ Safe (empty) |
+| RESERVE_ENTITY.CREATED_BY_BA_ID → BA       | 0          | 0       | ✅ Safe (empty) |
+
+### Findings
+
+**1. Data Integrity Excellent**
+
+Meskipun FK constraint tidak di-apply di database level, ETL DBEP-Next
+menjaga referential integrity dengan disiplin. 0 orphan di 8 relasi aktif
+membuktikan kualitas proses ETL.
+
+**2. Empty Audit Columns**
+
+`RESERVE_ENTITY.CREATED_BY_BA_ID` kosong untuk semua 22,921 rows.
+Kemungkinan kolom audit lain (LAST_UPDATE_BA_ID, LAST_APPROVE_BA_ID) juga kosong.
+
+**Action item**: Saat ETL future, populate kolom audit ini untuk compliance.
+
+**3. BA_ALIAS Empty**
+
+Tabel BA_ALIAS belum terisi. Saat integrasi LDAP/AD, tabel ini akan
+di-populate untuk map AD users ke BUSINESS_ASSOCIATE.
+
+### Conclusion
+
+**Semua 10 FK priority dapat di-apply tanpa cleanup.**
+
+Sprint 2 (FK application) dapat dimulai langsung.
